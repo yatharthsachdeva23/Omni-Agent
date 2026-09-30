@@ -1,15 +1,11 @@
 import React, { useState, useRef } from 'react';
 import {
-  Zap,
   Upload,
   FileText,
   X,
   Play,
-  RotateCcw,
-  Sparkles,
   Paperclip,
-  Database,
-  ArrowRight
+  Sparkles
 } from 'lucide-react';
 import {
   IngestedFile,
@@ -28,7 +24,7 @@ export const Track2Execution: React.FC = () => {
 
   // Live Telemetry States
   const [currentStage, setCurrentStage] = useState<string>('READY');
-  const [stageMessage, setStageMessage] = useState<string>('Awaiting prompt and input data to begin orchestration...');
+  const [stageMessage, setStageMessage] = useState<string>('Ready to orchestrate multi-agent workflow');
   const [structuredGoal, setStructuredGoal] = useState<StructuredGoal | null>(null);
   const [blackboard, setBlackboard] = useState<BlackboardSnapshot | null>(null);
   const [activeSubtask, setActiveSubtask] = useState<StructuredSubTask | null>(null);
@@ -38,15 +34,15 @@ export const Track2Execution: React.FC = () => {
 
   const scenarios = [
     {
-      label: "Full SaaS Architecture",
+      label: "Fintech Microservice",
       prompt: "Perform statistical sales optimization for Q3, calculate maximum throughput parameters, write the production Python engine with input validation guardrails, generate a 16:9 modern technical infographic diagram, and run a final executive audit."
     },
     {
-      label: "Financial Trading Bot",
+      label: "Algorithmic Risk Engine",
       prompt: "Derive quantitative volatility equations, engineer an async Python risk-monitoring daemon, create visual risk-reward matrix charts, and compile an audit report."
     },
     {
-      label: "Product Launch Suite",
+      label: "Product Analytics Suite",
       prompt: "Analyze user churn patterns from ingested dataset, write the backend analytics endpoint, create visual social media infographic assets, and synthesize executive launch documentation."
     }
   ];
@@ -81,7 +77,6 @@ export const Track2Execution: React.FC = () => {
     const taskPrompt = overridePrompt || prompt;
     if (!taskPrompt.trim()) return;
 
-    // Reset telemetry
     setIsExecuting(true);
     setCurrentStage('STARTING');
     setStageMessage('Initializing Omni Agent pipeline...');
@@ -163,7 +158,7 @@ export const Track2Execution: React.FC = () => {
       }
     } else if (eventName === 'EXECUTION_COMPLETED') {
       setCurrentStage('COMPLETED');
-      setStageMessage(`Execution successfully finalized with score of ${data.final_evaluation.overall_completion_score}%`);
+      setStageMessage(`Task execution finalized &bull; Score: ${data.final_evaluation.overall_completion_score}%`);
       setFinalEvaluation(data.final_evaluation);
       if (data.full_blackboard_state) {
         setBlackboard(data.full_blackboard_state);
@@ -173,43 +168,36 @@ export const Track2Execution: React.FC = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-16">
-      {/* Header Banner */}
-      <div className="text-center space-y-3 pt-4">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-semibold uppercase tracking-wider">
-          <Zap className="w-3.5 h-3.5" />
-          Autonomous Multi-Agent Orchestrator
+    <div className="max-w-4xl mx-auto space-y-12 pb-20 pt-6">
+      {/* Editorial Hero */}
+      <div className="text-center space-y-4 max-w-2xl mx-auto">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-white/[0.03] text-xs text-neutral-300">
+          <Sparkles className="w-3 h-3 text-neutral-400" />
+          <span>Track 2 &bull; Autonomous Multi-Agent Execution</span>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-          One Prompt. Unlimited Agents. <br />
-          <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 bg-clip-text text-transparent">
-            Automated Structuring, Jev Routing & Quality Verification.
-          </span>
+
+        <h1 className="text-4xl sm:text-5xl font-medium tracking-tight text-white leading-[1.15]">
+          One prompt. Infinite agents. <br />
+          <span className="text-neutral-400">Structured, routed, and verified.</span>
         </h1>
-        <p className="text-sm text-slate-400 max-w-2xl mx-auto">
-          Feed in your raw prompt and ingest files. Jev classifies and schedules the sub-tasks in milliseconds, specialized workers execute each step, domain reviewers inspect every output, and the Common Context Blackboard eliminates state amnesia.
+
+        <p className="text-sm text-neutral-400 leading-relaxed max-w-lg mx-auto">
+          Ingest raw prompts and datasets. Jev routes tasks in milliseconds, specialized models (Qwen, Mistral, Gemini, GPT, Flux.1) execute, and Gemini inspects every step before commit.
         </p>
       </div>
 
-      {/* Input & Ingestion Hub */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-5">
-        <div className="space-y-2">
-          <label className="text-xs font-mono text-cyan-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
-            Task Objective (Natural Language):
-          </label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            disabled={isExecuting}
-            placeholder="Tell us what you want to execute in full natural language. Include files, requirements, math, code, or visual specifications..."
-            rows={3}
-            className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all resize-none disabled:opacity-60"
-          />
-        </div>
+      {/* Input & Ingestion Card */}
+      <div className="bg-[#080808] border border-white/[0.08] rounded-2xl p-5 shadow-2xl space-y-5">
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          disabled={isExecuting}
+          placeholder="State your complex task in natural language. Ingest data files or paste context below..."
+          rows={3}
+          className="w-full bg-[#030303] border border-white/[0.08] rounded-xl p-4 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-white/30 transition-all resize-none font-sans disabled:opacity-50"
+        />
 
-        {/* Data Ingestion Row */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-1 border-t border-slate-800/80">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-1 border-t border-white/[0.06]">
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="file"
@@ -220,21 +208,20 @@ export const Track2Execution: React.FC = () => {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading || isExecuting}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700/80 text-xs font-semibold text-slate-200 border border-slate-700 transition-all disabled:opacity-50"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-transparent hover:bg-white/[0.05] text-xs font-medium text-neutral-300 hover:text-white border border-white/[0.1] hover:border-white/[0.2] transition-all disabled:opacity-50"
             >
-              <Paperclip className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{isUploading ? 'Ingesting...' : 'Ingest File / Dataset'}</span>
+              <Paperclip className="w-3.5 h-3.5 text-neutral-400" />
+              <span>{isUploading ? 'Ingesting...' : 'Ingest File'}</span>
             </button>
 
-            {/* Attached file tags */}
             {files.map((file, idx) => (
               <div
                 key={idx}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-xs text-cyan-300 font-mono"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-xs text-neutral-300 font-mono"
               >
-                <FileText className="w-3.5 h-3.5" />
-                <span className="truncate max-w-[140px]">{file.filename}</span>
-                <span className="text-[10px] text-cyan-500">({(file.size_bytes / 1024).toFixed(1)}KB)</span>
+                <FileText className="w-3.5 h-3.5 text-neutral-400" />
+                <span className="truncate max-w-[120px]">{file.filename}</span>
+                <span className="text-[10px] text-neutral-500">({(file.size_bytes / 1024).toFixed(1)}KB)</span>
                 {!isExecuting && (
                   <button
                     onClick={() => removeFile(idx)}
@@ -247,31 +234,29 @@ export const Track2Execution: React.FC = () => {
             ))}
           </div>
 
-          {/* Execute CTA */}
+          {/* Pure White CTA Button (Resend signature) */}
           <button
             onClick={() => handleExecute()}
             disabled={isExecuting || !prompt.trim()}
-            className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-7 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-cyan-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-black font-semibold text-xs transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-sm"
           >
             {isExecuting ? (
               <span className="flex items-center gap-2">
-                <span className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
-                Orchestrating Agents...
+                <span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin"></span>
+                Orchestrating...
               </span>
             ) : (
               <>
-                <Play className="w-4 h-4 fill-slate-950" />
-                <span>Execute with Omni Agent</span>
+                <Play className="w-3.5 h-3.5 fill-black" />
+                <span>Execute Workflow</span>
               </>
             )}
           </button>
         </div>
 
-        {/* Quick Demo Scenarios */}
-        <div className="pt-2 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-500 flex items-center gap-1">
-            Example Scenarios:
-          </span>
+        {/* Example Scenarios */}
+        <div className="pt-1 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-neutral-500">Presets:</span>
           {scenarios.map((sc, i) => (
             <button
               key={i}
@@ -280,7 +265,7 @@ export const Track2Execution: React.FC = () => {
                 handleExecute(sc.prompt);
               }}
               disabled={isExecuting}
-              className="text-[11px] px-2.5 py-1 rounded-md bg-slate-950/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all font-mono"
+              className="text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.02] hover:bg-white/[0.06] text-neutral-400 hover:text-white border border-white/[0.06] transition-all font-mono"
             >
               {sc.label}
             </button>
@@ -288,7 +273,7 @@ export const Track2Execution: React.FC = () => {
         </div>
       </div>
 
-      {/* Live Execution Visualizer */}
+      {/* Live Telemetry View */}
       {(structuredGoal || isExecuting || finalEvaluation) && (
         <div className="animate-fadeIn">
           <LiveExecutionVisualizer

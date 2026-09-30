@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Compass, Zap, Database, CheckCircle2 } from 'lucide-react';
+import { Compass, Zap, Database } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'advisor' | 'execution';
@@ -13,74 +13,60 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCatalog,
 }) => {
   return (
-    <header className="sticky top-0 z-50 backdrop-blur-xl bg-[#080d1a]/85 border-b border-slate-800/80 px-6 py-3.5 transition-all">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
+    <header className="sticky top-0 z-50 backdrop-blur-xl bg-black/80 border-b border-white/[0.08] transition-all">
+      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Brand */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <Layers className="w-5 h-5 text-slate-950 font-bold" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-                OMNI AGENT
-              </span>
-              <span className="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                v1.0 Pro
-              </span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-black font-black text-xs tracking-tighter">
+              OA
             </div>
-            <p className="text-xs text-slate-400 flex items-center gap-1.5 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Jev System 1 Router &bull; Python 3.12 Core
-            </p>
+            <span className="font-semibold text-sm tracking-tight text-white">
+              Omni Agent
+            </span>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-white/[0.1] text-[11px] font-mono text-neutral-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Jev Router &bull; Python 3.12</span>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 p-1 bg-slate-900/90 border border-slate-800 rounded-xl">
+        {/* Navigation Tabs (Resend-style minimal pill) */}
+        <div className="flex items-center p-1 bg-white/[0.04] border border-white/[0.08] rounded-full">
           <button
             onClick={() => setActiveTab('advisor')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
               activeTab === 'advisor'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-semibold shadow-md shadow-emerald-500/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                ? 'bg-white text-black shadow-sm font-semibold'
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
-            <Compass className="w-4 h-4" />
+            <Compass className="w-3.5 h-3.5" />
             <span>Track 1: Free Advisor</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold uppercase ${
-              activeTab === 'advisor' ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800 text-slate-300'
-            }`}>
-              DIY
-            </span>
           </button>
 
           <button
             onClick={() => setActiveTab('execution')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
               activeTab === 'execution'
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 font-semibold shadow-md shadow-cyan-500/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                ? 'bg-white text-black shadow-sm font-semibold'
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
-            <Zap className="w-4 h-4" />
-            <span>Track 2: Omni Autonomous</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold uppercase ${
-              activeTab === 'execution' ? 'bg-slate-950/20 text-slate-950' : 'bg-cyan-500/20 text-cyan-300'
-            }`}>
-              Full Auto
-            </span>
+            <Zap className="w-3.5 h-3.5" />
+            <span>Track 2: Autonomous Hub</span>
           </button>
         </div>
 
-        {/* Right Action */}
+        {/* Action */}
         <div className="flex items-center gap-3">
           <button
             onClick={onOpenCatalog}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-800/80 hover:bg-slate-800 text-slate-200 border border-slate-700/80 transition-all hover:border-slate-600"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium bg-transparent hover:bg-white/[0.05] text-neutral-300 hover:text-white border border-white/[0.1] hover:border-white/[0.2] transition-all"
           >
-            <Database className="w-3.5 h-3.5 text-cyan-400" />
-            <span>AI Tool Matrix</span>
+            <Database className="w-3.5 h-3.5 text-neutral-400" />
+            <span>AI Matrix</span>
           </button>
         </div>
       </div>

@@ -9,7 +9,11 @@ export const App: React.FC = () => {
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#080d1a] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="min-h-screen bg-black text-[#ededed] flex flex-col font-['Inter',sans-serif] relative overflow-hidden">
+      {/* Resend Top Ambient Lighting & Grid */}
+      <div className="absolute top-0 left-0 right-0 h-96 resend-radial-glow pointer-events-none"></div>
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px resend-top-line pointer-events-none"></div>
+
       {/* Top Navigation */}
       <Navbar
         activeTab={activeTab}
@@ -18,7 +22,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 px-4 sm:px-6 pt-6">
+      <main className="flex-1 px-4 sm:px-6 relative z-10">
         {activeTab === 'advisor' ? (
           <Track1Advisor />
         ) : (
@@ -32,9 +36,17 @@ export const App: React.FC = () => {
         onClose={() => setIsCatalogOpen(false)}
       />
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 py-6 text-center text-xs text-slate-500 font-mono">
-        Omni Agent Ecosystem &bull; Powered by Jev System 1 Routing &bull; Python 3.12 Orchestration Core
+      {/* Minimal Resend-style Footer */}
+      <footer className="border-t border-white/[0.08] py-8 text-center text-xs text-neutral-500 font-mono relative z-10">
+        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>Omni Agent Ecosystem &bull; Python 3.12 Engine</span>
+          </div>
+          <p className="text-neutral-600 text-[11px]">
+            Jev System 1 Routing &bull; Common Context Blackboard &bull; Gemini Multimodal QA
+          </p>
+        </div>
       </footer>
     </div>
   );

@@ -10,22 +10,18 @@ import {
   Image as ImageIcon,
   Video,
   FileCheck,
-  Eye,
   ChevronDown,
   ChevronUp,
   Cpu,
   Layers,
   Sparkles,
-  Download
+  ExternalLink
 } from 'lucide-react';
 import {
   StructuredGoal,
   BlackboardSnapshot,
   FinalEvaluationResult,
   StructuredSubTask,
-  WorkerResult,
-  IntermediateReviewResult,
-  NegativeKnowledgeItem
 } from '../types';
 
 interface LiveExecutionVisualizerProps {
@@ -53,15 +49,15 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
   const getDomainIcon = (domain: string) => {
     switch (domain.toLowerCase()) {
       case 'math':
-        return <Calculator className="w-4 h-4 text-amber-400" />;
+        return <Calculator className="w-3.5 h-3.5 text-neutral-300" />;
       case 'code':
-        return <Code2 className="w-4 h-4 text-emerald-400" />;
+        return <Code2 className="w-3.5 h-3.5 text-neutral-300" />;
       case 'vision':
-        return <ImageIcon className="w-4 h-4 text-cyan-400" />;
+        return <ImageIcon className="w-3.5 h-3.5 text-neutral-300" />;
       case 'video':
-        return <Video className="w-4 h-4 text-purple-400" />;
+        return <Video className="w-3.5 h-3.5 text-neutral-300" />;
       default:
-        return <FileCheck className="w-4 h-4 text-blue-400" />;
+        return <FileCheck className="w-3.5 h-3.5 text-neutral-300" />;
     }
   };
 
@@ -72,71 +68,71 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
   return (
     <div className="space-y-6">
       {/* Real-time Status Header */}
-      <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="p-4 rounded-2xl bg-[#080808] border border-white/[0.08] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+          <div className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-white">
             {isExecuting ? (
-              <Zap className="w-5 h-5 animate-pulse text-cyan-400" />
+              <Zap className="w-4 h-4 text-white animate-pulse" />
             ) : (
-              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             )}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">
-                Current Stage: {currentStage}
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400">
+                Phase: {currentStage}
               </span>
               {isExecuting && (
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
               )}
             </div>
-            <p className="text-sm font-semibold text-slate-200">{stageMessage}</p>
+            <p className="text-xs font-medium text-white">{stageMessage}</p>
           </div>
         </div>
 
-        {/* Jev System 1 Telemetry Pill */}
+        {/* Jev System 1 Telemetry (Monochrome minimal pill) */}
         {structuredGoal && (
-          <div className="flex items-center gap-4 bg-slate-950 px-4 py-2 rounded-xl border border-slate-800 text-xs font-mono">
+          <div className="flex items-center gap-4 bg-[#030303] px-3.5 py-1.5 rounded-xl border border-white/[0.06] text-xs font-mono">
             <div>
-              <span className="text-slate-500 block">Jev Routing Latency</span>
-              <span className="text-emerald-400 font-bold">{structuredGoal.jev_routing_latency_ms} ms</span>
+              <span className="text-neutral-500 text-[10px] block">Jev Routing</span>
+              <span className="text-white font-medium">{structuredGoal.jev_routing_latency_ms} ms</span>
             </div>
-            <div className="h-6 w-px bg-slate-800"></div>
+            <div className="h-5 w-px bg-white/[0.08]"></div>
             <div>
-              <span className="text-slate-500 block">System 1 Confidence</span>
-              <span className="text-cyan-400 font-bold">{(structuredGoal.jev_confidence * 100).toFixed(1)}%</span>
+              <span className="text-neutral-500 text-[10px] block">Confidence</span>
+              <span className="text-neutral-300 font-medium">{(structuredGoal.jev_confidence * 100).toFixed(1)}%</span>
             </div>
           </div>
         )}
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+      <div className="flex items-center gap-1.5 border-b border-white/[0.08] pb-2">
         <button
           onClick={() => setActiveTab('timeline')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
             activeTab === 'timeline'
-              ? 'bg-slate-800 text-cyan-400 border border-slate-700'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-white/[0.06] text-white border border-white/[0.1]'
+              : 'text-neutral-400 hover:text-white'
           }`}
         >
-          <Layers className="w-4 h-4" />
-          Execution DAG & Reviews
+          <Layers className="w-3.5 h-3.5" />
+          <span>Execution DAG & Reviews</span>
         </button>
 
         <button
           onClick={() => setActiveTab('blackboard')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
             activeTab === 'blackboard'
-              ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-white/[0.06] text-white border border-white/[0.1]'
+              : 'text-neutral-400 hover:text-white'
           }`}
         >
-          <Cpu className="w-4 h-4" />
-          Common Context Blackboard
+          <Cpu className="w-3.5 h-3.5" />
+          <span>Common Context Blackboard</span>
           {blackboard?.negative_knowledge.length ? (
-            <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 font-mono">
-              {blackboard.negative_knowledge.length} Mitigations
+            <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-white/[0.08] text-neutral-300 font-mono">
+              {blackboard.negative_knowledge.length}
             </span>
           ) : null}
         </button>
@@ -144,22 +140,22 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
         {finalEvaluation && (
           <button
             onClick={() => setActiveTab('deliverables')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
               activeTab === 'deliverables'
-                ? 'bg-slate-800 text-indigo-400 border border-slate-700'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white/[0.06] text-white border border-white/[0.1]'
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            Final Deliverables & Score ({finalEvaluation.overall_completion_score}%)
+            <Sparkles className="w-3.5 h-3.5 text-neutral-300" />
+            <span>Deliverables ({finalEvaluation.overall_completion_score}%)</span>
           </button>
         )}
       </div>
 
       {/* TAB 1: EXECUTION DAG & REVIEWS */}
       {activeTab === 'timeline' && structuredGoal && (
-        <div className="space-y-4">
-          {structuredGoal.sub_tasks.map((task, idx) => {
+        <div className="space-y-3">
+          {structuredGoal.sub_tasks.map((task) => {
             const output = blackboard?.completed_outputs[task.step_id];
             const review = blackboard?.intermediate_reviews[task.step_id];
             const isActive = activeSubtask?.step_id === task.step_id;
@@ -171,10 +167,10 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                 key={task.step_id}
                 className={`rounded-2xl border transition-all overflow-hidden ${
                   isActive
-                    ? 'bg-slate-900/90 border-cyan-500/60 shadow-lg shadow-cyan-500/10'
+                    ? 'bg-[#0a0a0a] border-white/30 shadow-lg'
                     : isCompleted
-                    ? 'bg-slate-900/70 border-slate-800'
-                    : 'bg-slate-950/40 border-slate-800/50 opacity-60'
+                    ? 'bg-[#080808] border-white/[0.08]'
+                    : 'bg-[#040404] border-white/[0.04] opacity-50'
                 }`}
               >
                 {/* Step Header */}
@@ -183,83 +179,83 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                   className="p-4 flex items-center justify-between cursor-pointer select-none"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center">
                       {getDomainIcon(task.domain)}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                        <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.2 rounded bg-white/[0.04] text-neutral-400 border border-white/[0.06]">
                           {task.step_id.toUpperCase()} &bull; {task.domain}
                         </span>
-                        <h4 className="text-sm font-bold text-white">{task.title}</h4>
+                        <h4 className="text-xs font-medium text-white">{task.title}</h4>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 font-mono">
-                        <span>Worker: <strong className="text-slate-200">{task.assigned_worker_model.split(' ')[0]}</strong></span>
+                      <div className="flex items-center gap-2 text-[11px] text-neutral-500 mt-1 font-mono">
+                        <span>Worker: <strong className="text-neutral-300">{task.assigned_worker_model.split(' ')[0]}</strong></span>
                         <span>&bull;</span>
-                        <span>QA: <strong className="text-slate-200">{task.assigned_reviewer_model.split(' ')[0]}</strong></span>
+                        <span>Reviewer: <strong className="text-neutral-300">Gemini 2.0 Flash</strong></span>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3">
                     {isActive ? (
-                      <span className="flex items-center gap-1.5 text-xs text-cyan-400 font-mono font-semibold px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20">
-                        <Clock className="w-3.5 h-3.5 animate-spin" /> In Progress
+                      <span className="flex items-center gap-1.5 text-[11px] text-neutral-300 font-mono px-2.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.1]">
+                        <Clock className="w-3 h-3 animate-spin" /> In Progress
                       </span>
                     ) : isCompleted ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-emerald-400 font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
-                          QA {review?.quality_score}% Passed
+                        <span className="text-[10px] text-emerald-400 font-mono px-2 py-0.5 rounded bg-emerald-500/[0.08] border border-emerald-500/20">
+                          Gemini QA {review?.quality_score}%
                         </span>
-                        <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                       </div>
                     ) : (
-                      <span className="text-xs text-slate-500 font-mono">Pending</span>
+                      <span className="text-[11px] text-neutral-600 font-mono">Pending</span>
                     )}
 
                     {isExpanded ? (
-                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                      <ChevronUp className="w-3.5 h-3.5 text-neutral-500" />
                     ) : (
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                      <ChevronDown className="w-3.5 h-3.5 text-neutral-500" />
                     )}
                   </div>
                 </div>
 
                 {/* Expanded Details */}
                 {isExpanded && (
-                  <div className="px-5 pb-5 pt-2 border-t border-slate-800/80 space-y-4">
-                    <p className="text-xs text-slate-300 leading-relaxed">
+                  <div className="px-5 pb-5 pt-2 border-t border-white/[0.06] space-y-3.5">
+                    <p className="text-xs text-neutral-400 leading-relaxed">
                       {task.description}
                     </p>
 
                     {/* Worker Output */}
                     {output && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs text-slate-400">
-                          <span className="font-mono text-cyan-400 font-semibold">Specialized Worker Output:</span>
-                          <span className="font-mono">{output.execution_time_ms} ms</span>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] text-neutral-500 font-mono">
+                          <span>Output ({output.worker_model})</span>
+                          <span>{output.execution_time_ms} ms</span>
                         </div>
-                        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800/90 font-mono text-xs text-slate-200 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                        <div className="p-3.5 rounded-xl bg-[#030303] border border-white/[0.06] font-mono text-xs text-neutral-200 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto">
                           {output.output_text}
                         </div>
                       </div>
                     )}
 
-                    {/* Intermediate Review Inspection Card */}
+                    {/* Dedicated Gemini Review Inspection Card */}
                     {review && (
-                      <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-2">
+                      <div className="p-3.5 rounded-xl bg-white/[0.02] border border-emerald-500/30 space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                              Intermediate Review Gate: {review.reviewer_model}
+                          <div className="flex items-center gap-1.5">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-[11px] font-mono font-medium text-emerald-400 uppercase tracking-wider">
+                              Dedicated Reviewer Gate: {review.reviewer_model}
                             </span>
                           </div>
-                          <span className="text-xs font-mono font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded">
-                            Quality Score: {review.quality_score}/100
+                          <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                            Score: {review.quality_score}/100
                           </span>
                         </div>
-                        <p className="text-xs text-emerald-200/90 whitespace-pre-wrap font-mono">
+                        <p className="text-xs text-neutral-300 font-mono whitespace-pre-wrap">
                           {review.critique}
                         </p>
                       </div>
@@ -274,50 +270,49 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
 
       {/* TAB 2: COMMON CONTEXT BLACKBOARD */}
       {activeTab === 'blackboard' && blackboard && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {/* Prerequisites */}
-          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+          <div className="p-5 rounded-2xl bg-[#080808] border border-white/[0.08] space-y-3">
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
               Global Prerequisites & Ingested Assets
             </h4>
-            <div className="space-y-1.5 font-mono text-xs text-slate-300">
+            <div className="space-y-1.5 font-mono text-xs text-neutral-300">
               {blackboard.global_prerequisites.map((p, i) => (
-                <div key={i} className="p-2 rounded-lg bg-slate-950/80 border border-slate-800">
+                <div key={i} className="p-2 rounded-lg bg-[#030303] border border-white/[0.06]">
                   {p}
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Negative Knowledge & Error Avoidance Registry */}
-          <div className="p-5 rounded-2xl bg-slate-900/80 border border-amber-500/30 space-y-3">
+          {/* Negative Knowledge & Avoidance Registry */}
+          <div className="p-5 rounded-2xl bg-[#080808] border border-white/[0.12] space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-amber-300 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-                Negative Knowledge & Error Avoidance Registry ({blackboard.negative_knowledge.length} Logged)
+              <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                Negative Knowledge & Avoidance Registry ({blackboard.negative_knowledge.length} Logged)
               </h4>
-              <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                Shared Memory Shield
+              <span className="text-[10px] font-mono text-neutral-400 bg-white/[0.04] px-2 py-0.5 rounded border border-white/[0.08]">
+                Continuity Shield
               </span>
             </div>
-            <p className="text-xs text-slate-400">
-              Any edge cases, potential drifts, or reviewer warnings are committed here so downstream agents explicitly avoid them:
+            <p className="text-xs text-neutral-400">
+              Reviewer critiques and edge cases captured here to prevent downstream agents from repeating past mistakes:
             </p>
 
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {blackboard.negative_knowledge.map((item, idx) => (
-                <div key={idx} className="p-3.5 rounded-xl bg-slate-950/80 border border-amber-500/20 space-y-1.5">
+                <div key={idx} className="p-3.5 rounded-xl bg-[#030303] border border-white/[0.06] space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono font-bold text-amber-400 uppercase">
+                    <span className="text-[11px] font-mono font-medium text-white uppercase">
                       [{item.stage}] {item.issue_type}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono">Origin: {item.step_id}</span>
+                    <span className="text-[10px] text-neutral-500 font-mono">Origin: {item.step_id}</span>
                   </div>
-                  <p className="text-xs text-slate-300"><strong>Observed:</strong> {item.description}</p>
-                  <p className="text-xs text-emerald-400 font-mono"><strong>Mitigation:</strong> {item.mitigation_applied}</p>
-                  <p className="text-xs text-cyan-300 font-mono">
-                    <strong>Avoidance Rule for Downstream:</strong> {item.prevention_directive_for_downstream}
+                  <p className="text-xs text-neutral-400"><strong>Observed:</strong> {item.description}</p>
+                  <p className="text-xs text-neutral-300 font-mono">
+                    <strong>Avoidance Rule:</strong> {item.prevention_directive_for_downstream}
                   </p>
                 </div>
               ))}
@@ -325,19 +320,19 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
           </div>
 
           {/* Cumulative Outputs Ledger */}
-          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <div className="p-5 rounded-2xl bg-[#080808] border border-white/[0.08] space-y-3">
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
               Cumulative Verified Outputs Ledger
             </h4>
-            <div className="space-y-3 font-mono text-xs">
+            <div className="space-y-2.5 font-mono text-xs">
               {Object.entries(blackboard.completed_outputs).map(([stepId, res]) => (
-                <div key={stepId} className="p-3 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1">
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span className="font-bold text-emerald-400">{stepId.toUpperCase()} ({res.domain})</span>
-                    <span>Model: {res.worker_model}</span>
+                <div key={stepId} className="p-3 rounded-xl bg-[#030303] border border-white/[0.06] space-y-1">
+                  <div className="flex items-center justify-between text-neutral-500 text-[11px]">
+                    <span className="font-semibold text-white">{stepId.toUpperCase()} ({res.domain})</span>
+                    <span>{res.worker_model}</span>
                   </div>
-                  <p className="text-slate-300 line-clamp-2">{res.output_text.slice(0, 180)}...</p>
+                  <p className="text-neutral-400 line-clamp-2">{res.output_text.slice(0, 160)}...</p>
                 </div>
               ))}
             </div>
@@ -347,42 +342,43 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
 
       {/* TAB 3: DELIVERABLES & FINAL SCORE */}
       {activeTab === 'deliverables' && finalEvaluation && (
-        <div className="space-y-6">
-          {/* Completion Gauge Card */}
-          <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-indigo-500/30 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
+        <div className="space-y-5">
+          {/* Completion Score Card */}
+          <div className="p-6 rounded-2xl bg-[#080808] border border-white/[0.12] flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
             <div className="space-y-2 text-center md:text-left">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold uppercase font-mono">
-                <Sparkles className="w-3.5 h-3.5" /> Final Review Benchmark
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-white/10 bg-white/[0.03] text-[11px] text-neutral-400 font-mono">
+                <Sparkles className="w-3 h-3 text-neutral-400" />
+                <span>Verification Complete</span>
               </div>
-              <h3 className="text-2xl font-black text-white">Execution Objective Fulfilled</h3>
-              <p className="text-xs text-slate-300 max-w-lg leading-relaxed">
+              <h3 className="text-2xl font-medium text-white tracking-tight">Objective Successfully Executed</h3>
+              <p className="text-xs text-neutral-400 max-w-md leading-relaxed">
                 {finalEvaluation.summary_for_user}
               </p>
             </div>
 
-            <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-950/80 border border-indigo-500/30 min-w-[180px]">
-              <span className="text-4xl font-extrabold bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+            <div className="flex flex-col items-center justify-center p-5 rounded-2xl bg-[#030303] border border-white/[0.1] min-w-[160px]">
+              <span className="text-4xl font-light text-white tracking-tight">
                 {finalEvaluation.overall_completion_score}%
               </span>
-              <span className="text-xs font-mono uppercase tracking-wider text-slate-400 mt-1">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 mt-1">
                 Completion Score
               </span>
             </div>
           </div>
 
           {/* Compliance Breakdown */}
-          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4">
-            <h4 className="text-sm font-bold text-white">Quality Gate Breakdown</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-5 rounded-2xl bg-[#080808] border border-white/[0.08] space-y-3">
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Quality Metric Breakdown</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {Object.entries(finalEvaluation.compliance_breakdown).map(([metric, score]) => (
-                <div key={metric} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-2">
+                <div key={metric} className="p-3 rounded-xl bg-[#030303] border border-white/[0.06] space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-300 font-medium">{metric}</span>
-                    <span className="font-mono font-bold text-emerald-400">{score}%</span>
+                    <span className="text-neutral-400">{metric}</span>
+                    <span className="font-mono text-white">{score}%</span>
                   </div>
-                  <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div className="w-full bg-white/[0.06] h-1 rounded-full overflow-hidden">
                     <div
-                      className="bg-gradient-to-r from-emerald-500 to-cyan-500 h-full rounded-full"
+                      className="bg-white h-full rounded-full"
                       style={{ width: `${score}%` }}
                     ></div>
                   </div>
@@ -392,22 +388,22 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
           </div>
 
           {/* Deliverables Explorer */}
-          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4">
-            <h4 className="text-sm font-bold text-white">Generated Deliverables & Assets</h4>
-            <div className="space-y-4">
+          <div className="p-5 rounded-2xl bg-[#080808] border border-white/[0.08] space-y-3">
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Generated Deliverables & Assets</h4>
+            <div className="space-y-3">
               {Object.entries(finalEvaluation.deliverables).map(([id, del]) => (
-                <div key={id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <div key={id} className="p-4 rounded-xl bg-[#030303] border border-white/[0.06] space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {getDomainIcon(del.domain)}
-                      <h5 className="text-sm font-bold text-white capitalize">{del.title}</h5>
+                      <h5 className="text-xs font-medium text-white capitalize">{del.title}</h5>
                     </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 uppercase">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.04] text-neutral-400 uppercase">
                       {del.domain}
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-lg bg-slate-900/90 font-mono text-xs text-slate-200 max-h-52 overflow-y-auto whitespace-pre-wrap border border-slate-800/60">
+                  <div className="p-3 rounded-xl bg-[#000000] font-mono text-xs text-neutral-300 max-h-48 overflow-y-auto whitespace-pre-wrap border border-white/[0.06]">
                     {del.summary}
                   </div>
                 </div>

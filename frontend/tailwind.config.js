@@ -7,14 +7,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          dark: '#090d16',
-          card: '#111827',
-          border: '#1f293d',
-          accent: '#10b981',
-          cyan: '#06b6d4',
-          indigo: '#6366f1'
+        dark: {
+          bg: '#000000',
+          card: '#080808',
+          subtle: '#111111',
+          border: '#1c1c1c',
+          borderHover: '#2a2a2a',
+          textMuted: '#888888',
+          textPrimary: '#ededed'
         }
+      },
+      fontFamily: {
+        sans: ['"Inter"', '"Plus Jakarta Sans"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'monospace']
       }
     },
   },
