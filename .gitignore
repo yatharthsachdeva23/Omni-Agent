@@ -1,0 +1,30 @@
+# Python
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+.npm/
+
+# Environment Variables & Credentials
+.env
+.env.*
+!.env.example
+*.env
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
