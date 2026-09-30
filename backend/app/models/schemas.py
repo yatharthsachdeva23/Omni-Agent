@@ -1,0 +1,117 @@
+from typing import List, Dict, Any, Optional
+from enum import Enum
+from pydantic import BaseModel, Field
+
+class DomainType(str, Enum):
+    CODE = "code"
+    MATH = "math"
+    VISION = "vision"
+    VIDEO = "video"
+    AUDIT = "audit"
+    GENERAL = "general"
+
+class TaskStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    REVIEWING = "reviewing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    RETRIED = "retried"
+
+class ReviewStatus(str, Enum):
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    WARNING = "warning"
+
+class IngestedFile(BaseModel):
+    filename: str
+    content_type: str = "text/plain"
+    size_bytes: int = 0
+    preview_or_content: str = ""
+
+class TaskRequest(BaseModel):
+    prompt: str
+    files: List[IngestedFile] = Field(default_factory=list)
+    mode: str = "paid"  # "paid" for Omni Execution, "free" for Advisor
+    allow_simulation: bool = True
+
+class StructuredSubTask(BaseModel):
+    step_id: str
+    title: str
+    domain: DomainType
+    description: str
+    assigned_worker_model: str
+    assigned_reviewer_model: str
+    required_prerequisites: List[str] = Field(default_factory=list)
+    expected_output_type: str
+    status: TaskStatus = TaskStatus.PENDING
+
+class StructuredGoal(BaseModel):
+    primary_objective: str
+    prerequisites: List[str] = Field(default_factory=list)
+    constraints: List[str] = Field(default_factory=list)
+    sub_tasks: List[StructuredSubTask] = Field(default_factory=list)
+    jev_routing_latency_ms: float = 0.0
+    jev_confidence: float = 0.98
+
+class WorkerResult(BaseModel):
+    step_id: str
+    worker_model: str
+    domain: DomainType
+    output_text: str
+    artifacts: Dict[str, Any] = Field(default_factory=dict)
+    execution_time_ms: float = 0.0
+    success: bool = True
+
+class IntermediateReviewResult(BaseModel):
+    step_id: str
+    reviewer_model: str
+    status: ReviewStatus
+    quality_score: int  # 0 to 100
+    critique: str
+    recommendations: List[str] = Field(default_factory=list)
+    passed: bool = True
+    mitigation_required: bool = False
+
+class NegativeKnowledgeItem(BaseModel):
+    step_id: str
+    stage: str
+    issue_type: str
+    description: str
+    mitigation_applied: str
+    prevention_directive_for_downstream: str
+
+class BlackboardState(BaseModel):
+    session_id: str
+    original_prompt: str
+    structured_goal: Optional[StructuredGoal] = None
+    global_prerequisites: List[str] = Field(default_factory=list)
+    completed_outputs: Dict[str, WorkerResult] = Field(default_factory=dict)
+    intermediate_reviews: Dict[str, IntermediateReviewResult] = Field(default_factory=dict)
+    negative_knowledge: List[NegativeKnowledgeItem] = Field(default_factory=list)
+    current_step_id: Optional[str] = None
+    audit_trail: List[Dict[str, Any]] = Field(default_factory=list)
+
+class FinalEvaluationResult(BaseModel):
+    overall_completion_score: int  # e.g., 94%
+    compliance_breakdown: Dict[str, int] = Field(default_factory=dict)
+    internal_audit_notes: List[str] = Field(default_factory=list)
+    summary_for_user: str
+    deliverables: Dict[str, Any] = Field(default_factory=dict)
+
+# Track 1 Models
+class ToolRecommendation(BaseModel):
+    category: str
+    tool_name: str
+    provider: str
+    description: str
+    why_recommended: str
+    sample_prompt: str
+    is_free: bool = False
+    pricing_tier: str
+
+class AdvisorResponse(BaseModel):
+    original_query: str
+    task_decomposition: List[str]
+    recommendations: List[ToolRecommendation]
+    diy_execution_blueprint: List[Dict[str, Any]]
