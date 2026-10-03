@@ -158,7 +158,7 @@ export const Track2Execution: React.FC = () => {
       }
     } else if (eventName === 'EXECUTION_COMPLETED') {
       setCurrentStage('COMPLETED');
-      setStageMessage(`Task execution finalized &bull; Score: ${data.final_evaluation.overall_completion_score}%`);
+      setStageMessage(`Task execution finalized • Score: ${data.final_evaluation.overall_completion_score}%`);
       setFinalEvaluation(data.final_evaluation);
       if (data.full_blackboard_state) {
         setBlackboard(data.full_blackboard_state);

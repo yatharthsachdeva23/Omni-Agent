@@ -1,4 +1,5 @@
 import time
+import re
 import urllib.parse
 import httpx
 from typing import Dict, Any, List, Optional
@@ -333,18 +334,35 @@ if __name__ == "__main__":
 
     # 5. VISUAL ASSET SPECIALIST: Flux.1 (via Pollinations AI - 100% Free & Live)
     async def _run_flux_visual(self, task, objective, prior_outputs, avoidance_rules) -> WorkerResult:
-        clean_prompt = f"Modern high-tech 16:9 infographic diagram explaining: {objective[:120]}, cyan and emerald neon dark slate theme, clean typography"
+        # Intelligently clean user objective into a high-fidelity image prompt
+        subject = re.sub(
+            r"^(can\s+you\s+)?(please\s+)?(make|generate|create|render|draw|show)\s+(an?\s+)?(image|picture|photo|graphic|illustration)\s+(of\s+)?",
+            "",
+            objective.strip(),
+            flags=re.IGNORECASE
+        ).strip()
+        if not subject:
+            subject = objective.strip()
+
+        # Discern between diagram/infographic vs creative/photorealistic
+        is_diagram = any(w in objective.lower() for w in ["diagram", "chart", "infographic", "architecture", "flowchart", "schematic", "blueprint"])
+        if is_diagram:
+            clean_prompt = f"Professional clean 16:9 technical infographic diagram explaining {subject}, modern typography, crisp minimalist vector detailing"
+        else:
+            clean_prompt = f"A high-quality, beautifully lit, detailed photograph of {subject}, natural cinematic lighting, sharp focus, aesthetic composition, 8k resolution"
+
         encoded_prompt = urllib.parse.quote(clean_prompt)
         live_image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&model=flux&nologo=true"
 
         visual_output = (
-            "### Visual Asset & Technical Infographic Synthesis\n"
-            "*Rendered by Flux.1 Visual Specialist*\n\n"
-            f"![Technical Infographic]({live_image_url})\n\n"
-            "- **Engine**: Flux.1 Ultra-Vision Synthesis\n"
-            "- **Dimensions**: $1280 \\times 720$ (16:9 HD)\n"
-            "- **Color Palette**: Dark Slate (#080d1a), Hyper Cyan (#06b6d4), Emerald Glow (#10b981)\n"
-            "- **Asset Direct Link**: [Download Full-Resolution Image](" + live_image_url + ")\n"
+            f"### Visual Asset & Creative Render\n"
+            f"*Rendered by Flux.1 Visual Specialist*\n\n"
+            f"**Subject**: {subject}\n\n"
+            f"![Generated Visual Asset]({live_image_url})\n\n"
+            f"- **Engine**: Flux.1 Ultra-Vision Synthesis\n"
+            f"- **Prompt**: \"{clean_prompt}\"\n"
+            f"- **Dimensions**: 1280 x 720 (16:9 High Definition)\n"
+            f"- **Asset Direct Link**: [Download Full-Resolution Image]({live_image_url})\n"
         )
         return WorkerResult(
             step_id=task.step_id,
@@ -353,6 +371,7 @@ if __name__ == "__main__":
             output_text=visual_output,
             artifacts={
                 "image_url": live_image_url,
+                "prompt": clean_prompt,
                 "aspect_ratio": "16:9",
                 "dimensions": "1280x720",
                 "model": "Flux.1"

@@ -87,13 +87,15 @@ class JSONStructurerAgent:
 
         # Check for Visual / Image Generation
         if any(w in p_lower for w in ["image", "picture", "infographic", "visual", "logo", "mockup", "photo", "render", "diagram"]):
+            is_diagram = any(w in p_lower for w in ["diagram", "chart", "infographic", "architecture", "flowchart", "schematic"])
+            title = "Technical Infographic & Diagram Synthesis" if is_diagram else "Visual Asset & Creative Image Generation"
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",
-                title="Visual Asset & Infographic Synthesis",
+                title=title,
                 domain=DomainType.VISION,
-                description="Synthesize high-fidelity visual representations, diagrams, or branding assets matching exact styling parameters.",
-                assigned_worker_model="Midjourney v6 / Flux.1-Pro",
-                assigned_reviewer_model="Multimodal-Vision-Inspector-v3 (Gemini 2.0 Flash Vision)",
+                description=f"Synthesize high-fidelity visual asset or render matching user goal: {prompt[:120]}",
+                assigned_worker_model="Flux.1 Schnell (Visual Specialist)",
+                assigned_reviewer_model="Multimodal-Vision-Inspector (Gemini 2.0 Flash Vision)",
                 required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["Visual style directives"],
                 expected_output_type="rendered_image_url_and_metadata",
                 status=TaskStatus.PENDING

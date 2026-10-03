@@ -109,7 +109,9 @@ class OmniOrchestrator:
 
             await asyncio.sleep(0.5)
 
-            review_result, negative_knowledge = await self.review_engine.review_task(task, worker_result)
+            review_result, negative_knowledge = await self.review_engine.review_task(
+                task, worker_result, primary_objective=blackboard.original_prompt
+            )
 
             # Commit to Blackboard
             blackboard.record_worker_output(step_id, worker_result)

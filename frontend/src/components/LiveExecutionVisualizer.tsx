@@ -230,11 +230,32 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
 
                     {/* Worker Output */}
                     {output && (
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         <div className="flex items-center justify-between text-[11px] text-neutral-500 font-mono">
                           <span>Output ({output.worker_model})</span>
                           <span>{output.execution_time_ms} ms</span>
                         </div>
+                        {output.artifacts?.image_url && (
+                          <div className="rounded-xl overflow-hidden border border-white/[0.12] bg-[#050505] p-2 space-y-2">
+                            <img
+                              src={output.artifacts.image_url}
+                              alt="Generated Visual Asset"
+                              className="w-full h-auto max-h-96 object-contain rounded-lg shadow-xl"
+                              loading="lazy"
+                            />
+                            <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
+                              <span>Flux.1 Synthesis • 1280x720</span>
+                              <a
+                                href={output.artifacts.image_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-white hover:underline flex items-center gap-1"
+                              >
+                                Open Full Size &rarr;
+                              </a>
+                            </div>
+                          </div>
+                        )}
                         <div className="p-3.5 rounded-xl bg-[#030303] border border-white/[0.06] font-mono text-xs text-neutral-200 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto">
                           {output.output_text}
                         </div>
@@ -402,6 +423,28 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                       {del.domain}
                     </span>
                   </div>
+
+                  {del.artifacts?.image_url && (
+                    <div className="rounded-xl overflow-hidden border border-white/[0.12] bg-[#050505] p-2 space-y-2">
+                      <img
+                        src={del.artifacts.image_url}
+                        alt={del.title}
+                        className="w-full h-auto max-h-96 object-contain rounded-lg"
+                        loading="lazy"
+                      />
+                      <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
+                        <span>Flux.1 Asset</span>
+                        <a
+                          href={del.artifacts.image_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-white hover:underline flex items-center gap-1"
+                        >
+                          Open Full Size &rarr;
+                        </a>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="p-3 rounded-xl bg-[#000000] font-mono text-xs text-neutral-300 max-h-48 overflow-y-auto whitespace-pre-wrap border border-white/[0.06]">
                     {del.summary}

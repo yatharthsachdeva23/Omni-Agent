@@ -26,7 +26,8 @@ class IntermediateReviewEngine:
     async def review_task(
         self,
         task: StructuredSubTask,
-        worker_result: WorkerResult
+        worker_result: WorkerResult,
+        primary_objective: str = ""
     ) -> Tuple[IntermediateReviewResult, Optional[NegativeKnowledgeItem]]:
         domain = task.domain
         step_id = task.step_id
@@ -35,7 +36,7 @@ class IntermediateReviewEngine:
         # Check if live Gemini API is configured
         if self.api_key:
             try:
-                live_review, live_neg = await self._call_live_gemini(task, worker_result)
+                live_review, live_neg = await self._call_live_gemini(task, worker_result, primary_objective)
                 if live_review:
                     return live_review, live_neg
             except Exception as e:
@@ -54,7 +55,8 @@ class IntermediateReviewEngine:
     async def _call_live_gemini(
         self,
         task: StructuredSubTask,
-        worker_result: WorkerResult
+        worker_result: WorkerResult,
+        primary_objective: str = ""
     ) -> Tuple[Optional[IntermediateReviewResult], Optional[NegativeKnowledgeItem]]:
         """
         Executes a real live call to Google Gemini with structured JSON quality evaluation.
@@ -63,14 +65,16 @@ class IntermediateReviewEngine:
         prompt_text = (
             f"You are the Gemini Quality Reviewer for Omni Agent.\n"
             f"Strictly review the following output from Sub-Agent {worker_result.worker_model} for step '{task.title}'.\n\n"
+            f"User's Primary Objective: {primary_objective or task.description}\n"
             f"Task Description: {task.description}\n"
             f"Worker Output:\n{worker_result.output_text[:8000]}\n\n"
-            "Rigorously evaluate whether the worker fulfilled the actual task requirements.\n"
+            "Rigorously evaluate whether the worker output actually fulfilled the User's Primary Objective.\n"
             "CRITICAL QUALITY RULES:\n"
             "- If the worker claimed it cannot access files, refused the task, or went off-topic, it is a CRITICAL FAILURE. "
             "You MUST set passed: false, status: 'rejected', and quality_score between 0 and 30.\n"
             "- If the worker executed the task partially or with flaws, set status: 'warning', and quality_score between 50 and 70.\n"
-            "- If the worker executed the task with high quality, set passed: true, status: 'approved', and quality_score between 80 and 100.\n\n"
+            "- If the worker output directly fulfills what the user requested (e.g. image generated matching the requested subject, correct code, questions answered), "
+            "set passed: true, status: 'approved', and quality_score between 85 and 100.\n\n"
             "Output MUST be valid JSON with this exact schema:\n"
             "{\n"
             '  "passed": boolean,\n'
