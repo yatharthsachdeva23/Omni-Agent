@@ -38,7 +38,7 @@ class OmniOrchestrator:
         })
         await asyncio.sleep(0.4)
 
-        structured_goal = self.structurer.structure(request.prompt, request.files)
+        structured_goal = await self.structurer.structure_async(request.prompt, request.files)
         yield self._format_sse("STRUCTURING_COMPLETED", {
             "structured_goal": structured_goal.model_dump()
         })
@@ -51,7 +51,7 @@ class OmniOrchestrator:
         })
         await asyncio.sleep(0.3)
 
-        routed_plan = self.jev_router.route_plan(structured_goal)
+        routed_plan = await self.jev_router.route_plan_async(structured_goal)
         yield self._format_sse("JEV_ROUTING_COMPLETED", {
             "routed_plan": routed_plan.model_dump(),
             "latency_ms": routed_plan.jev_routing_latency_ms,

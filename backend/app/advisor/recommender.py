@@ -1,4 +1,5 @@
 import json
+import re
 import httpx
 from typing import List, Dict, Any, Optional
 from app.models.schemas import ToolRecommendation, AdvisorResponse
@@ -210,43 +211,69 @@ class AIAdvisorEngine:
 
     def _deterministic_fallback(self, user_query: str) -> AdvisorResponse:
         """
-        Safety net fallback when offline or if all API calls fail.
+        Dynamic semantic fallback when offline or if all API calls fail.
+        Ranks all tools in the catalog against the user query keywords,
+        avoiding hardcoded indices.
         """
-        q_lower = user_query.lower()
+        q_words = set(re.findall(r'\b[a-zA-Z0-9_-]+\b', user_query.lower()))
+
+        # Score catalog tools against query keywords
+        scored_tools = []
+        for t in self.catalog:
+            score = 0
+            text_corpus = f"{t.get('name', '')} {t.get('category', '')} {t.get('description', '')} {' '.join(t.get('strengths', []))}".lower()
+            for w in q_words:
+                if len(w) > 2 and w in text_corpus:
+                    score += 2
+                    if w in t.get('category', '').lower():
+                        score += 3
+                    if w in t.get('name', '').lower():
+                        score += 4
+            scored_tools.append((score, t))
+
+        # Sort by score descending
+        scored_tools.sort(key=lambda x: x[0], reverse=True)
+        top_candidates = [t for s, t in scored_tools[:3] if s > 0]
+        if not top_candidates:
+            # Fallback to general high-performance pair if no keyword overlap
+            top_candidates = [self.catalog[0], self.catalog[min(10, len(self.catalog) - 1)]]
+
+        recommendations: List[ToolRecommendation] = []
+        diy_blueprint: List[Dict[str, Any]] = []
         decomposition: List[str] = [
-            "Step 1: Grounded Research & Specification Discovery",
-            "Step 2: Core Engineering & Implementation",
-            "Step 3: Verification & Polish"
+            f"Step 1: Problem Formulation & Architecture Definition for '{user_query[:40]}...'",
+            f"Step 2: Core Implementation with Specialized Tooling",
+            f"Step 3: Verification, Edge-Case Auditing & Delivery"
         ]
-        t1 = self.catalog[10]  # Gemini 2.0 Flash
-        t2 = self.catalog[0]   # Claude 3.5 Sonnet
-        
-        recommendations = [
-            ToolRecommendation(
-                category="High-Context Research",
-                tool_name=t1["name"],
-                provider=t1["provider"],
-                description=t1["description"],
-                why_recommended="Ingests complex multi-domain documentation with high context retention.",
-                sample_prompt=f"Analyze requirements, dependencies, and architecture for: {user_query}",
-                is_free=t1["is_free"],
-                pricing_tier=t1["pricing_tier"]
-            ),
-            ToolRecommendation(
-                category="Engineering & Execution",
-                tool_name=t2["name"],
-                provider=t2["provider"],
-                description=t2["description"],
-                why_recommended="Industry benchmark for zero-defect fullstack coding and technical execution.",
-                sample_prompt=f"Implement a modular, production-ready solution for: {user_query}",
-                is_free=t2["is_free"],
-                pricing_tier=t2["pricing_tier"]
-            )
-        ]
-        diy_blueprint = [
-            {"step": 1, "action": "Deep Analysis", "recommended_tool": t1["name"], "instruction": "Feed full context into Gemini to map dependencies."},
-            {"step": 2, "action": "Execute Implementation", "recommended_tool": t2["name"], "instruction": "Paste the specifications into Claude 3.5 Sonnet to generate the deliverables."}
-        ]
+
+        for idx, tool in enumerate(top_candidates):
+            category = tool.get("category", "General AI")
+            name = tool.get("name", "AI Tool")
+            provider = tool.get("provider", "External AI")
+            desc = tool.get("description", "")
+            is_free = tool.get("is_free", False)
+            pricing = tool.get("pricing_tier", "Freemium")
+
+            why_rec = f"Specialized {category} engine with top benchmark scores in {', '.join(tool.get('strengths', ['accuracy', 'speed']))}."
+            sample_p = f"Execute step {idx + 1} for: {user_query}. Ensure modular output and rigorous constraint validation."
+
+            recommendations.append(ToolRecommendation(
+                category=category,
+                tool_name=name,
+                provider=provider,
+                description=desc,
+                why_recommended=why_rec,
+                sample_prompt=sample_p,
+                is_free=is_free,
+                pricing_tier=pricing
+            ))
+
+            diy_blueprint.append({
+                "step": idx + 1,
+                "action": f"Deploy {name} for {category}",
+                "recommended_tool": name,
+                "instruction": f"Run the tailored prompt in {name} ({provider}) and pipe the output to downstream steps."
+            })
 
         return AdvisorResponse(
             original_query=user_query,

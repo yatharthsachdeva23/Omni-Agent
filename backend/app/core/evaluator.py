@@ -46,24 +46,32 @@ class FinalEvaluationAgent:
             "Prompt Objective Fulfillment": prompt_fulfillment,
             "Intermediate Step Quality Gate Average": int(avg_review_score),
             "Constraint & Type Boundary Compliance": boundary_compliance,
-            "Negative Knowledge Error Prevention": 95 if negative_knowledge else 85
+            "Negative Knowledge Error Prevention": min(100, int(avg_review_score * 0.95 + len(negative_knowledge) * 2)) if negative_knowledge else int(avg_review_score * 0.92)
         }
 
         pass_percentage = int(pass_ratio * 100)
+        jev_lat = blackboard_state.structured_goal.jev_routing_latency_ms if blackboard_state.structured_goal else 0.0
         internal_audit_notes = [
             f"Execution session: {blackboard_state.session_id}",
             f"Total Sub-tasks Executed: {len(completed_outputs)}",
-            f"Jev System 1 Routing Latency: {blackboard_state.structured_goal.jev_routing_latency_ms if blackboard_state.structured_goal else 140.0}ms",
+            f"Jev System 1 Routing Latency: {jev_lat:.1f}ms",
             f"Intermediate QA Pass Rate: {pass_percentage}% ({passed_reviews}/{total_reviews} tasks approved)",
             f"Negative Knowledge Items Logged & Mitigated: {len(negative_knowledge)}",
             "Context propagation ledger verified across sub-agent graph."
         ]
 
-        # Assemble deliverables map
+        # Assemble deliverables map with actual sub-task titles
+        task_titles = {}
+        if blackboard_state.structured_goal:
+            for st in blackboard_state.structured_goal.sub_tasks:
+                task_titles[st.step_id] = st.title
+
         deliverables: Dict[str, Any] = {}
         for step_id, worker_res in completed_outputs.items():
+            dom_val = worker_res.domain.value if hasattr(worker_res.domain, 'value') else str(worker_res.domain)
+            title = task_titles.get(step_id, f"Deliverable ({dom_val})")
             deliverables[step_id] = {
-                "title": f"Deliverable ({worker_res.domain})",
+                "title": title,
                 "domain": worker_res.domain,
                 "summary": worker_res.output_text,
                 "artifacts": worker_res.artifacts
