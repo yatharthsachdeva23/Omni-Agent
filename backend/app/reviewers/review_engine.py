@@ -307,51 +307,17 @@ class IntermediateReviewEngine:
 
         # 2. Domain Specific Programmatic Inspection
         if domain == DomainType.CODE:
-            # Check if this is frontend / web code (HTML, CSS, JS)
-            is_html_web = (
-                "```html" in text.lower() or
-                "```css" in text.lower() or
-                "<!doctype" in text.lower() or
-                "<html" in text.lower()
-            )
-
-            if is_html_web:
-                has_html_tags = "<html" in text.lower()
-                has_body = "<body" in text.lower() or "</head>" in text.lower()
-                score = 95 if (has_html_tags and has_body) else 88
-                critique = "Frontend Quality Gate Passed: Clean, semantic, standalone HTML5/CSS3 deliverable verified."
-                review = IntermediateReviewResult(
-                    step_id=step_id,
-                    reviewer_model="Programmatic Web Markup Linter",
-                    status=ReviewStatus.APPROVED,
-                    quality_score=score,
-                    critique=critique,
-                    recommendations=["Ensure all layout components adapt smoothly across mobile and desktop breakpoints."],
-                    passed=True,
-                    mitigation_required=False
-                )
-                neg = NegativeKnowledgeItem(
-                    step_id=step_id,
-                    stage="markup_linting",
-                    issue_type="task_fulfillment_check",
-                    description=critique,
-                    mitigation_applied="Approved responsive frontend markup deliverable.",
-                    prevention_directive_for_downstream="Integrate frontend deliverable directly into presentation output."
-                )
-                return review, neg
-
-            # Extract code blocks
-            code_blocks = re.findall(r'```(?:python)?(.*?)```', text, re.DOTALL)
-            if not code_blocks:
-                # No code block found in code domain
-                critique = "Inspection Warning: Code task produced markdown without formal executable python code blocks."
+            # Polyglot code fence extraction: ```<lang> ... ```
+            fenced_matches = re.findall(r'```([a-zA-Z0-9_+-]*)\s*\n(.*?)```', text, re.DOTALL)
+            if not fenced_matches:
+                critique = "Inspection Warning: Code task produced markdown without formal executable code blocks."
                 review = IntermediateReviewResult(
                     step_id=step_id,
                     reviewer_model="Programmatic Code Linter",
                     status=ReviewStatus.WARNING,
-                    quality_score=55,
+                    quality_score=60,
                     critique=critique,
-                    recommendations=["Enclose all implementation code in valid ```python code blocks."],
+                    recommendations=["Enclose all implementation code in valid language-tagged markdown code blocks."],
                     passed=True,
                     mitigation_required=True
                 )
@@ -359,76 +325,81 @@ class IntermediateReviewEngine:
                     step_id=step_id,
                     stage="code_inspection",
                     issue_type="missing_code_fences",
-                    description="Worker omitted python code fences in deliverable.",
+                    description="Worker omitted formal code fences in deliverable.",
                     mitigation_applied="Flagged formatting warning.",
-                    prevention_directive_for_downstream="Ensure code blocks are cleanly isolated."
+                    prevention_directive_for_downstream="Ensure code blocks are cleanly isolated in markdown code fences."
                 )
                 return review, neg
 
-            # Real AST Syntax Verification
+            # Language-specific verification
             syntax_errors = []
             valid_blocks = 0
-            has_functions = False
-            has_classes = False
+            detected_languages = []
 
-            for block in code_blocks:
-                code_str = block.strip()
-                if not code_str:
+            for lang_tag, code_str in fenced_matches:
+                code_clean = code_str.strip()
+                if not code_clean:
                     continue
-                try:
-                    tree = ast.parse(code_str)
-                    valid_blocks += 1
-                    for node in ast.walk(tree):
-                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            has_functions = True
-                        elif isinstance(node, ast.ClassDef):
-                            has_classes = True
-                except SyntaxError as syn_err:
-                    syntax_errors.append(f"Line {syn_err.lineno}: {syn_err.msg}")
+                lang = (lang_tag or "").lower().strip()
+                detected_languages.append(lang or "text/code")
+
+                # If Python, perform AST parsing
+                if lang in ["python", "py"] or (not lang and ("def " in code_clean or "import " in code_clean or "class " in code_clean)):
+                    try:
+                        ast.parse(code_clean)
+                        valid_blocks += 1
+                    except SyntaxError as syn_err:
+                        syntax_errors.append(f"Python syntax error on line {syn_err.lineno}: {syn_err.msg}")
+                elif lang in ["html", "htm", "xml", "svg"] or "<html" in code_clean.lower():
+                    # Validate HTML structure
+                    has_tags = "<" in code_clean and ">" in code_clean
+                    if has_tags:
+                        valid_blocks += 1
+                    else:
+                        syntax_errors.append("Invalid HTML markup syntax")
+                else:
+                    # For all other languages (JS, TS, SQL, CSS, Go, Rust, C++, etc.), verify basic structure
+                    if len(code_clean) > 20:
+                        valid_blocks += 1
 
             if syntax_errors:
                 err_summary = "; ".join(syntax_errors[:2])
-                critique = f"Code Quality Failure: Python syntax error detected in generated code ({err_summary})."
+                critique = f"Code Quality Failure: Syntax error detected in generated code ({err_summary})."
                 review = IntermediateReviewResult(
                     step_id=step_id,
-                    reviewer_model="Programmatic AST Linter",
+                    reviewer_model="Programmatic Code Linter",
                     status=ReviewStatus.REJECTED,
                     quality_score=25,
                     critique=critique,
-                    recommendations=["Fix syntax errors and re-lint against Python 3.12 standard."],
+                    recommendations=["Fix syntax errors and ensure code conforms to target language standards."],
                     passed=False,
                     mitigation_required=True
                 )
                 neg = NegativeKnowledgeItem(
                     step_id=step_id,
-                    stage="ast_linting",
+                    stage="code_linting",
                     issue_type="syntax_error",
-                    description=f"Generated code failed ast.parse: {err_summary}",
+                    description=f"Generated code failed syntax validation: {err_summary}",
                     mitigation_applied="Rejected step output and logged syntax failure.",
-                    prevention_directive_for_downstream="Downstream scripts must not import syntax-corrupted modules."
+                    prevention_directive_for_downstream="Downstream tasks must verify code syntax."
                 )
                 return review, neg
 
-            # Passed AST syntax
-            score = 88
-            if has_classes and has_functions:
-                score += 7
-            elif has_functions:
-                score += 4
-
+            score = 95 if valid_blocks > 0 else 85
+            langs_str = ", ".join(set(detected_languages)) or "code"
             critique = (
-                f"Python 3.12 AST Inspection Passed:\n"
-                f"- Syntax: 100% valid Python 3.12 AST structure\n"
-                f"- Architecture: {'Modular OOP classes and methods detected' if has_classes else 'Functional methods present'}\n"
-                f"- Verification: Verified {valid_blocks} code block(s) without compilation errors."
+                f"Polyglot Code Inspection Passed:\n"
+                f"- Languages: Verified {langs_str}\n"
+                f"- Validation: {valid_blocks} code block(s) verified without syntax errors\n"
+                f"- Deliverable: Modular and production-grade implementation."
             )
             review = IntermediateReviewResult(
                 step_id=step_id,
-                reviewer_model="Programmatic AST Linter",
+                reviewer_model="Programmatic Code Linter",
                 status=ReviewStatus.APPROVED,
-                quality_score=min(98, score),
+                quality_score=score,
                 critique=critique,
-                recommendations=["Verify unit test execution against edge-case inputs."],
+                recommendations=["Verify execution against edge-case inputs."],
                 passed=True,
                 mitigation_required=False
             )

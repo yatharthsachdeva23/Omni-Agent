@@ -81,7 +81,7 @@ class JSONStructurerAgent:
             "- For single-domain requests (such as 'make an image of X', 'draw X', 'render photo of X'), do NOT artificially split into multiple steps like 'prompt engineering' and 'rendering'. An image request must be 1 SINGLE cohesive step (domain: 'vision'). Prompt expansion is handled internally by the visual worker.\n"
             "- Never produce two subtasks of domain 'vision' for the same image generation request.\n"
             "- CRITICAL DOMAIN RULES:\n"
-            "  * Domain 'code' is EXCLUSIVELY for writing actual computer software, Python scripts, APIs, or software algorithms.\n"
+            "  * Domain 'code' is for software development, programming, algorithms, frontend web development (HTML/CSS/JS), backend APIs, or database scripts.\n"
             "  * NEVER assign domain 'code' to poems, poetry, creative writing, essays, or natural language text! Writing a poem is domain 'audit' (Content/Summarizer Specialist).\n"
             "  * For compound requests like 'make an image of X and write a poem on it':\n"
             "    - step_1: Visual Asset Generation for X (domain: 'vision', Worker: 'Flux.1 (Visual Asset Specialist)')\n"
@@ -95,7 +95,7 @@ class JSONStructurerAgent:
             "- assigned_worker_model: name of model best suited (e.g. 'Qwen 2.5 Coder (via Groq Cloud)', 'Gemini 2.0 Flash (Summarizer Specialist)', 'Mistral (Legal & Formal Logic Specialist)', 'Flux.1 (Visual Asset Specialist)', 'OpenAI GPT (Auditing Specialist)')\n"
             "- assigned_reviewer_model: 'Gemini 2.0 Flash (Multimodal & Step QA Reviewer)'\n"
             "- required_prerequisites: list of prerequisites (e.g. ['Initial user objective'], ['step_1'])\n"
-            "- expected_output_type: e.g. 'python_module', 'markdown_report', 'rendered_image_url', 'poem_markdown'\n\n"
+            "- expected_output_type: e.g. 'code_module', 'webpage_markup', 'markdown_report', 'rendered_image_url', 'poem_markdown'\n\n"
             "Return strictly valid JSON with this exact schema:\n"
             "{\n"
             '  "primary_objective": "Clear single-sentence encapsulation of the user\'s core goal",\n'
@@ -286,7 +286,7 @@ class JSONStructurerAgent:
         has_code = any(w in p_lower for w in explicit_code_words) and not (has_poem and not any(w in p_lower for w in ["python", "script", "api", "backend", "algorithm"]))
         if has_code:
             is_web = any(w in p_lower for w in ["html", "css", "webpage", "website", "frontend", "landing page", "replica", "ui", "interface", "react", "vue"])
-            desc = f"Engineer standalone, responsive HTML5 and CSS3 webpage replica matching: {prompt}" if is_web else f"Engineer production-grade implementation matching: {prompt}"
+            desc = f"Engineer standalone, responsive HTML5/CSS3 frontend implementation matching: {prompt}" if is_web else f"Engineer production-grade software implementation matching: {prompt}"
             title = f"Web & UI Implementation for '{prompt[:45]}...'" if is_web else f"Modular Implementation & Architecture for '{prompt[:45]}...'"
             out_type = "frontend_html_css_markup" if is_web else "executable_code"
             subtasks.append(StructuredSubTask(
