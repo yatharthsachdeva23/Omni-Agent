@@ -276,19 +276,28 @@ class JSONStructurerAgent:
             ))
             step_idx += 1
 
-        # Check for Coding / Software Engineering (strictly exclude creative text)
-        explicit_code_words = ["python", "script", "program", "api", "function", "backend", "algorithm", "develop", "software", "endpoint", "class", "bot"]
+        # Check for Coding / Frontend / Software Engineering (strictly exclude creative text)
+        explicit_code_words = [
+            "python", "script", "program", "api", "function", "backend", "algorithm",
+            "develop", "software", "endpoint", "class", "bot", "code", "coding",
+            "html", "css", "webpage", "website", "frontend", "landing page", "replica",
+            "ui", "interface", "react", "vue", "javascript"
+        ]
         has_code = any(w in p_lower for w in explicit_code_words) and not (has_poem and not any(w in p_lower for w in ["python", "script", "api", "backend", "algorithm"]))
         if has_code:
+            is_web = any(w in p_lower for w in ["html", "css", "webpage", "website", "frontend", "landing page", "replica", "ui", "interface", "react", "vue"])
+            desc = f"Engineer standalone, responsive HTML5 and CSS3 webpage replica matching: {prompt}" if is_web else f"Engineer production-grade implementation matching: {prompt}"
+            title = f"Web & UI Implementation for '{prompt[:45]}...'" if is_web else f"Modular Implementation & Architecture for '{prompt[:45]}...'"
+            out_type = "frontend_html_css_markup" if is_web else "executable_code"
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",
-                title=f"Modular Implementation & Architecture for '{prompt[:45]}...'",
+                title=title,
                 domain=DomainType.CODE,
-                description=f"Engineer production-grade Python 3.12 implementation matching: {prompt}",
+                description=desc,
                 assigned_worker_model="Qwen 2.5 Coder (via Groq Cloud)",
                 assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
                 required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["System specifications"],
-                expected_output_type="executable_python_code",
+                expected_output_type=out_type,
                 status=TaskStatus.PENDING
             ))
             step_idx += 1

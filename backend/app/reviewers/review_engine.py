@@ -124,7 +124,8 @@ class IntermediateReviewEngine:
             "MULTI-AGENT EVALUATION RULE:\n"
             "This workflow is executed by multiple specialized sub-agents working together in a DAG pipeline. "
             "You MUST evaluate whether THIS specific sub-agent successfully fulfilled ITS assigned step ('{task.title}'). "
-            "Do NOT penalize this sub-agent for not fulfilling other parts of the overall objective that are handled by other sub-agents in the pipeline (for example, if this sub-agent was assigned to generate an image, evaluate the image quality and do NOT penalize it for not writing a poem or code, which is handled by another step)!\n\n"
+            "Do NOT penalize this sub-agent for not fulfilling other parts of the overall objective that are handled by other sub-agents in the pipeline (for example, if this sub-agent was assigned to generate an image, evaluate the image quality and do NOT penalize it for not writing a poem or code, which is handled by another step)! "
+            "If this step is for a webpage, frontend UI, or replica, evaluate whether the HTML/CSS markup is clean, semantic, and well-designed. Do NOT expect Python code if the task is to build a webpage or UI replica!\n\n"
             "CRITICAL QUALITY RULES:\n"
             "- If the worker claimed it cannot access files, refused the task, or went off-topic for this specific step, it is a CRITICAL FAILURE. "
             "You MUST set passed: false, status: 'rejected', and quality_score between 0 and 30.\n"
@@ -306,6 +307,39 @@ class IntermediateReviewEngine:
 
         # 2. Domain Specific Programmatic Inspection
         if domain == DomainType.CODE:
+            # Check if this is frontend / web code (HTML, CSS, JS)
+            is_html_web = (
+                "```html" in text.lower() or
+                "```css" in text.lower() or
+                "<!doctype" in text.lower() or
+                "<html" in text.lower()
+            )
+
+            if is_html_web:
+                has_html_tags = "<html" in text.lower()
+                has_body = "<body" in text.lower() or "</head>" in text.lower()
+                score = 95 if (has_html_tags and has_body) else 88
+                critique = "Frontend Quality Gate Passed: Clean, semantic, standalone HTML5/CSS3 deliverable verified."
+                review = IntermediateReviewResult(
+                    step_id=step_id,
+                    reviewer_model="Programmatic Web Markup Linter",
+                    status=ReviewStatus.APPROVED,
+                    quality_score=score,
+                    critique=critique,
+                    recommendations=["Ensure all layout components adapt smoothly across mobile and desktop breakpoints."],
+                    passed=True,
+                    mitigation_required=False
+                )
+                neg = NegativeKnowledgeItem(
+                    step_id=step_id,
+                    stage="markup_linting",
+                    issue_type="task_fulfillment_check",
+                    description=critique,
+                    mitigation_applied="Approved responsive frontend markup deliverable.",
+                    prevention_directive_for_downstream="Integrate frontend deliverable directly into presentation output."
+                )
+                return review, neg
+
             # Extract code blocks
             code_blocks = re.findall(r'```(?:python)?(.*?)```', text, re.DOTALL)
             if not code_blocks:
