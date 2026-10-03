@@ -58,17 +58,33 @@ async def get_ai_advice(payload: dict):
     response = await advisor_engine.advise_async(prompt)
     return response
 
+from app.utils.file_parser import extract_text_from_file_bytes
+
+UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     contents = await file.read()
+    filename = file.filename or "uploaded_file"
+
+    # Save physical copy for local file access if needed
+    save_path = UPLOAD_DIR / filename
     try:
-        preview = contents[:2000].decode("utf-8", errors="ignore")
-    except Exception:
-        preview = f"[Binary data: {len(contents)} bytes]"
+        with open(save_path, "wb") as f_out:
+            f_out.write(contents)
+    except Exception as e:
+        print(f"[Upload] Warning: Could not write file to uploads dir: {e}")
+
+    # Extract readable text from PDF, Docx, or Plaintext
+    extracted_text, detected_type = extract_text_from_file_bytes(filename, contents)
+    
+    # Store rich text context up to 45,000 chars for LLM context injection
+    preview = extracted_text[:45000]
 
     return IngestedFile(
-        filename=file.filename or "uploaded_file",
-        content_type=file.content_type or "application/octet-stream",
+        filename=filename,
+        content_type=detected_type or file.content_type or "application/octet-stream",
         size_bytes=len(contents),
         preview_or_content=preview
     )

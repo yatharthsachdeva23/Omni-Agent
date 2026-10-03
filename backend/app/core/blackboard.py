@@ -87,7 +87,15 @@ class CommonContextBlackboard:
             "current_step": target_subtask.model_dump() if target_subtask else {"step_id": step_id},
             "cumulative_prior_outputs": prior_knowledge,
             "negative_knowledge_avoidance_rules": avoidance_rules,
-            "ingested_files": [{"filename": f.filename, "size": f.size_bytes} for f in self.ingested_files]
+            "ingested_files": [
+                {
+                    "filename": f.filename,
+                    "size": f.size_bytes,
+                    "content_type": f.content_type,
+                    "content": f.preview_or_content
+                }
+                for f in self.ingested_files
+            ]
         }
         
         self._log_audit("CONTEXT_FETCHED", f"Context prepared for sub-agent step {step_id}")

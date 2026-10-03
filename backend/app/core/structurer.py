@@ -115,14 +115,29 @@ class JSONStructurerAgent:
             ))
             step_idx += 1
 
-        # If no specific domain triggered or general summary/audit requested:
-        if not subtasks or any(w in p_lower for w in ["audit", "review", "summary", "summarize", "report", "overview", "plan", "research"]):
+        # Check for Exam / Study / Questions / Quiz / Notes Synthesis
+        if any(w in p_lower for w in ["exam", "test", "quiz", "question", "questions and answer", "study", "prep", "notes", "lecture"]):
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",
-                title="Analytical Synthesis & Comprehensive Audit",
+                title="Exam Preparation & Question-Answer Generation",
                 domain=DomainType.AUDIT,
-                description="Synthesize holistic findings, conduct cross-verification, and compile strategic briefing report.",
-                assigned_worker_model="Gemini 2.0 Pro / GPT-4o Analytical",
+                description="Synthesize key concepts from provided notes, formulate top high-yield exam questions, and provide authoritative answers.",
+                assigned_worker_model="OpenAI GPT-4o-mini / Gemini",
+                assigned_reviewer_model="Academic-Pedagogy-and-Fidelity-Reviewer",
+                required_prerequisites=["Attached notes and syllabus"],
+                expected_output_type="exam_questions_and_solutions_markdown",
+                status=TaskStatus.PENDING
+            ))
+            step_idx += 1
+
+        # If no specific domain triggered or general summary/audit requested:
+        if not subtasks:
+            subtasks.append(StructuredSubTask(
+                step_id=f"step_{step_idx}",
+                title="Analytical Synthesis & Comprehensive Deliverable",
+                domain=DomainType.AUDIT,
+                description=f"Synthesize findings and execute the user's objective: {prompt[:120]}",
+                assigned_worker_model="OpenAI GPT / Gemini Specialist",
                 assigned_reviewer_model="Logic-Consistency-Auditor",
                 required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["Source data"],
                 expected_output_type="analytical_report_markdown",

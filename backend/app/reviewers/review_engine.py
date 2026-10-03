@@ -1,5 +1,6 @@
+import json
 import httpx
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Any
 from app.models.schemas import (
     DomainType,
     WorkerResult,
@@ -56,14 +57,29 @@ class IntermediateReviewEngine:
         worker_result: WorkerResult
     ) -> Tuple[Optional[IntermediateReviewResult], Optional[NegativeKnowledgeItem]]:
         """
-        Executes a real live call to Google Gemini 2.0 Flash API.
+        Executes a real live call to Google Gemini with structured JSON quality evaluation.
+        Evaluates task fulfillment honestly: failing or off-task workers receive a rejected status and low score.
         """
         prompt_text = (
             f"You are the Gemini Quality Reviewer for Omni Agent.\n"
-            f"Review the following output from Sub-Agent {worker_result.worker_model} for step '{task.title}'.\n\n"
+            f"Strictly review the following output from Sub-Agent {worker_result.worker_model} for step '{task.title}'.\n\n"
             f"Task Description: {task.description}\n"
-            f"Worker Output:\n{worker_result.output_text}\n\n"
-            f"Provide your critique, assign an objective quality score (0-100), and note any potential edge cases or negative knowledge for downstream agents."
+            f"Worker Output:\n{worker_result.output_text[:8000]}\n\n"
+            "Rigorously evaluate whether the worker fulfilled the actual task requirements.\n"
+            "CRITICAL QUALITY RULES:\n"
+            "- If the worker claimed it cannot access files, refused the task, or went off-topic, it is a CRITICAL FAILURE. "
+            "You MUST set passed: false, status: 'rejected', and quality_score between 0 and 30.\n"
+            "- If the worker executed the task partially or with flaws, set status: 'warning', and quality_score between 50 and 70.\n"
+            "- If the worker executed the task with high quality, set passed: true, status: 'approved', and quality_score between 80 and 100.\n\n"
+            "Output MUST be valid JSON with this exact schema:\n"
+            "{\n"
+            '  "passed": boolean,\n'
+            '  "status": "approved" | "rejected" | "warning",\n'
+            '  "quality_score": integer (0 to 100),\n'
+            '  "critique": "Detailed critique explaining strengths or failures",\n'
+            '  "recommendations": ["Recommendation 1", ...],\n'
+            '  "negative_knowledge_directive": "Avoidance directive for downstream agents"\n'
+            "}"
         )
 
         url = f"{self.endpoint}?key={self.api_key}"
@@ -72,33 +88,64 @@ class IntermediateReviewEngine:
                 {
                     "parts": [{"text": prompt_text}]
                 }
-            ]
+            ],
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "temperature": 0.1
+            }
         }
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(url, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
-                text_content = data["candidates"][0]["content"]["parts"][0]["text"]
-                review = IntermediateReviewResult(
-                    step_id=task.step_id,
-                    reviewer_model="Gemini 2.0 Flash (Live API)",
-                    status=ReviewStatus.APPROVED,
-                    quality_score=97,
-                    critique=text_content[:400] + ("..." if len(text_content) > 400 else ""),
-                    recommendations=["Adhere to verified specifications."],
-                    passed=True,
-                    mitigation_required=False
-                )
-                neg = NegativeKnowledgeItem(
-                    step_id=task.step_id,
-                    stage="gemini_qa",
-                    issue_type="live_verification_checkpoint",
-                    description="Gemini inspected output against boundary conditions.",
-                    mitigation_applied="Verified compliance with user objective.",
-                    prevention_directive_for_downstream="Downstream agents should maintain the verified parameters."
-                )
-                return review, neg
+                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                try:
+                    eval_data = json.loads(raw_text)
+                    if isinstance(eval_data, list) and len(eval_data) > 0:
+                        eval_data = eval_data[0]
+
+                    is_passed = bool(eval_data.get("passed", True))
+                    score = int(eval_data.get("quality_score", 70))
+                    status_raw = str(eval_data.get("status", "approved")).lower()
+
+                    if not is_passed or score < 50 or "reject" in status_raw:
+                        review_status = ReviewStatus.REJECTED
+                        is_passed = False
+                    elif "warn" in status_raw or score < 75:
+                        review_status = ReviewStatus.WARNING
+                    else:
+                        review_status = ReviewStatus.APPROVED
+
+                    critique = str(eval_data.get("critique", "Evaluation completed."))
+                    recs = eval_data.get("recommendations", ["Ensure all input requirements are met."])
+                    if not isinstance(recs, list):
+                        recs = [str(recs)]
+
+                    directive = str(eval_data.get("negative_knowledge_directive", "Downstream agents must verify prerequisite parameters."))
+
+                    review = IntermediateReviewResult(
+                        step_id=task.step_id,
+                        reviewer_model="Gemini 2.0 Flash (Live API)",
+                        status=review_status,
+                        quality_score=score,
+                        critique=critique,
+                        recommendations=recs,
+                        passed=is_passed,
+                        mitigation_required=(not is_passed or review_status == ReviewStatus.WARNING)
+                    )
+
+                    neg = NegativeKnowledgeItem(
+                        step_id=task.step_id,
+                        stage="gemini_qa",
+                        issue_type="task_fulfillment_check" if is_passed else "critical_task_failure",
+                        description=critique[:200],
+                        mitigation_applied="Logged critique on Blackboard." if is_passed else "Failure flagged; score penalized.",
+                        prevention_directive_for_downstream=directive
+                    )
+                    return review, neg
+                except Exception as parse_err:
+                    print(f"[Gemini Reviewer] JSON parse error: {parse_err}. Raw: {raw_text[:200]}")
         return None, None
 
     def _review_vision_with_gemini(

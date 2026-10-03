@@ -36,20 +36,32 @@ class WorkerPool:
         objective = blackboard_context.get("primary_objective", "")
         prior_outputs = blackboard_context.get("cumulative_prior_outputs", {})
         avoidance_rules = blackboard_context.get("negative_knowledge_avoidance_rules", [])
+        ingested_files = blackboard_context.get("ingested_files", [])
+
+        # Format attached documents/notes into prompt context
+        attached_files_text = ""
+        if ingested_files:
+            file_blocks = []
+            for f in ingested_files:
+                content = f.get("content", "").strip()
+                if content:
+                    file_blocks.append(f"=== ATTACHED DOCUMENT: {f['filename']} ({f.get('content_type', 'file')}) ===\n{content[:35000]}")
+            if file_blocks:
+                attached_files_text = "\n\n[USER ATTACHED DOCUMENTS & REFERENCE DATA]\n" + "\n\n".join(file_blocks)
 
         # Route to specialist sub-agent
         if domain == DomainType.CODE or "qwen" in assigned_model.lower():
-            result = await self._run_qwen_coder(task, objective, prior_outputs, avoidance_rules)
+            result = await self._run_qwen_coder(task, objective, prior_outputs, avoidance_rules, attached_files_text)
         elif "summary" in task.title.lower() or "gemini" in assigned_model.lower():
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text)
         elif domain in [DomainType.MATH, "legal_logic"] or "mistral" in assigned_model.lower():
-            result = await self._run_mistral_logic(task, objective, prior_outputs, avoidance_rules)
+            result = await self._run_mistral_logic(task, objective, prior_outputs, avoidance_rules, attached_files_text)
         elif domain == DomainType.VISION or "flux" in assigned_model.lower():
             result = await self._run_flux_visual(task, objective, prior_outputs, avoidance_rules)
         elif "openai" in assigned_model.lower() or domain == DomainType.AUDIT:
-            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules)
+            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text)
         else:
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         result.execution_time_ms = round(elapsed_ms + 180.0, 1)
@@ -59,16 +71,16 @@ class WorkerPool:
 
         return result
 
-    # 1. CODING SPECIALIST: Qwen 2.5 Coder (via Groq Cloud)
-    async def _run_qwen_coder(self, task, objective, prior_outputs, avoidance_rules) -> WorkerResult:
+    async def _run_qwen_coder(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
         if self.groq_key:
             try:
                 system_prompt = (
                     "You are Qwen 2.5 Coder, the elite software engineering specialist for Omni Agent.\n"
                     "Write production-grade, typed, modular Python 3.12 code matching the task requirements.\n"
+                    "If reference documents or files are attached, utilize their specifications accurately.\n"
                     f"Negative Knowledge Avoidance Rules to obey:\n{chr(10).join(avoidance_rules)}"
                 )
-                user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}"
+                user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{attached_files_text}"
 
                 async with httpx.AsyncClient(timeout=15.0) as client:
                     resp = await client.post(
@@ -148,15 +160,15 @@ if __name__ == "__main__":
             success=True
         )
 
-    # 2. SUMMARIZER SPECIALIST: Gemini 2.0 Flash (Google AI Studio)
-    async def _run_gemini_summarizer(self, task, objective, prior_outputs, avoidance_rules) -> WorkerResult:
+    async def _run_gemini_summarizer(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
         if self.gemini_key:
             try:
                 prompt_text = (
-                    f"You are the Gemini Summarizer Specialist for Omni Agent.\n"
+                    f"You are the Gemini Specialist for Omni Agent.\n"
                     f"Task: {task.title}\nObjective: {objective}\n"
-                    f"Prior Outputs from other agents:\n{str(prior_outputs)[:2000]}\n\n"
-                    f"Provide an authoritative, high-density executive summary synthesizing all findings."
+                    f"Prior Outputs from other agents:\n{str(prior_outputs)[:2000]}\n"
+                    f"{attached_files_text}\n\n"
+                    f"Thoroughly analyze all inputs (including attached documents/notes) and produce the comprehensive deliverable fulfilling the task."
                 )
                 async with httpx.AsyncClient(timeout=12.0) as client:
                     resp = await client.post(
@@ -194,8 +206,7 @@ if __name__ == "__main__":
             success=True
         )
 
-    # 3. LEGAL & FORMAL LOGIC SPECIALIST: Mistral (via OpenRouter)
-    async def _run_mistral_logic(self, task, objective, prior_outputs, avoidance_rules) -> WorkerResult:
+    async def _run_mistral_logic(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
         if self.openrouter_key:
             try:
                 async with httpx.AsyncClient(timeout=15.0) as client:
@@ -210,11 +221,11 @@ if __name__ == "__main__":
                             "messages": [
                                 {
                                     "role": "system",
-                                    "content": "You are the Mistral Legal & Formal Logic Specialist for Omni Agent. Evaluate regulatory constraints, deductive validity, and compliance."
+                                    "content": "You are the Mistral Legal & Formal Logic Specialist for Omni Agent. Evaluate regulatory constraints, deductive validity, and compliance. If attached files are present, analyze them directly."
                                 },
                                 {
                                     "role": "user",
-                                    "content": f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}"
+                                    "content": f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{attached_files_text}"
                                 }
                             ]
                         }
@@ -252,11 +263,20 @@ if __name__ == "__main__":
             success=True
         )
 
-    # 4. AUDITING SPECIALIST: OpenAI GPT (via OpenRouter)
-    async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules) -> WorkerResult:
+    async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
         if self.openrouter_key:
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                system_content = (
+                    "You are the OpenAI GPT Specialist for Omni Agent.\n"
+                    "Fulfill the user's task with rigor and high fidelity.\n"
+                    "IMPORTANT NOTE ON ATTACHMENTS: If attached reference materials, notes, or PDFs are provided below, "
+                    "their full text has been extracted and provided directly to you. You MUST read and analyze them thoroughly, "
+                    "directly cite/use concepts from the notes, and produce the requested deliverables (e.g. top 10 questions with answers, "
+                    "audits, summaries, or analyses). Do NOT say you cannot access files or attachments."
+                )
+                user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}\nCumulative Prior Outputs:\n{str(prior_outputs)[:2000]}{attached_files_text}"
+
+                async with httpx.AsyncClient(timeout=25.0) as client:
                     resp = await client.post(
                         "https://openrouter.ai/api/v1/chat/completions",
                         headers={
@@ -268,11 +288,11 @@ if __name__ == "__main__":
                             "messages": [
                                 {
                                     "role": "system",
-                                    "content": "You are the OpenAI GPT Auditing Specialist for Omni Agent. Conduct an exhaustive cross-stage audit verifying fidelity, security, and quality."
+                                    "content": system_content
                                 },
                                 {
                                     "role": "user",
-                                    "content": f"Objective: {objective}\nTask: {task.title}\nCumulative Prior Outputs:\n{str(prior_outputs)[:2000]}"
+                                    "content": user_msg
                                 }
                             ]
                         }
