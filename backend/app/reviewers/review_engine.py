@@ -1,6 +1,8 @@
 import json
 import re
 import ast
+import os
+from pathlib import Path
 import httpx
 from typing import Tuple, Optional, Dict, Any
 from app.models.schemas import (
@@ -36,44 +38,50 @@ class IntermediateReviewEngine:
         step_id = task.step_id
         reviewer_model = "Gemini 2.0 Flash (Multimodal & Step QA Reviewer)"
 
-        # If Vision task, actively probe the image URL to prevent approving 402 or broken links
+        # If Vision task, actively verify the image is accessible and not broken
         if domain == DomainType.VISION:
+            local_path = worker_result.artifacts.get("local_path")
             image_url = worker_result.artifacts.get("image_url")
-            if not image_url and "![" in worker_result.output_text:
-                match = re.search(r'\!\[.*?\]\((https?://[^\)]+)\)', worker_result.output_text)
-                if match:
-                    image_url = match.group(1)
+            is_accessible = False
 
-            if image_url:
+            if local_path and os.path.exists(local_path) and os.path.getsize(local_path) > 500:
+                is_accessible = True
+            elif image_url and image_url.startswith("/api/generated-images/"):
+                fname = image_url.split("/")[-1]
+                local_f = Path(__file__).resolve().parent.parent.parent / "uploads" / "generated" / fname
+                is_accessible = local_f.exists() and local_f.stat().st_size > 500
+            elif image_url and image_url.startswith("http"):
                 try:
-                    async with httpx.AsyncClient(timeout=8.0) as probe_client:
+                    async with httpx.AsyncClient(timeout=6.0) as probe_client:
                         probe_resp = await probe_client.get(image_url, follow_redirects=True)
-                        if probe_resp.status_code != 200 or "image/" not in probe_resp.headers.get("content-type", ""):
-                            critique = (
-                                f"CRITICAL VISUAL REJECTION: The generated image URL failed network accessibility check "
-                                f"(HTTP {probe_resp.status_code}: {probe_resp.text[:120]}). The asset cannot be displayed."
-                            )
-                            review = IntermediateReviewResult(
-                                step_id=step_id,
-                                reviewer_model=reviewer_model,
-                                status=ReviewStatus.REJECTED,
-                                quality_score=20,
-                                critique=critique,
-                                recommendations=["Switch to unauthenticated free endpoint without paywalled flags."],
-                                passed=False,
-                                mitigation_required=True
-                            )
-                            neg = NegativeKnowledgeItem(
-                                step_id=step_id,
-                                stage="visual_gate",
-                                issue_type="paywalled_or_broken_image_url",
-                                description=f"Image URL returned HTTP {probe_resp.status_code}.",
-                                mitigation_applied="Flagged failure; penalized step score to 20%.",
-                                prevention_directive_for_downstream="Use unauthenticated image endpoints without paywalled parameter flags."
-                            )
-                            return review, neg
-                except Exception as probe_e:
-                    print(f"[Reviewer Probe] Notice: {probe_e}")
+                        is_accessible = (probe_resp.status_code == 200 and "image/" in probe_resp.headers.get("content-type", ""))
+                except Exception:
+                    is_accessible = False
+
+            if not is_accessible:
+                critique = (
+                    "CRITICAL VISUAL REJECTION: The generated visual asset failed accessibility check. "
+                    "The asset cannot be loaded or displayed."
+                )
+                review = IntermediateReviewResult(
+                    step_id=step_id,
+                    reviewer_model=reviewer_model,
+                    status=ReviewStatus.REJECTED,
+                    quality_score=20,
+                    critique=critique,
+                    recommendations=["Ensure image generator writes valid binary image data to disk."],
+                    passed=False,
+                    mitigation_required=True
+                )
+                neg = NegativeKnowledgeItem(
+                    step_id=step_id,
+                    stage="visual_gate",
+                    issue_type="missing_or_corrupted_image",
+                    description="Image file is missing from disk or returned non-200 status.",
+                    mitigation_applied="Flagged failure; penalized step score to 20%.",
+                    prevention_directive_for_downstream="Ensure visual asset is saved and verified on disk before downstream processing."
+                )
+                return review, neg
 
         # 1. Primary: Real live call to Google Gemini with JSON mode
         if self.gemini_key:
@@ -109,15 +117,19 @@ class IntermediateReviewEngine:
         prompt_text = (
             f"You are the Gemini Quality Reviewer for Omni Agent.\n"
             f"Strictly review the following output from Sub-Agent {worker_result.worker_model} for step '{task.title}'.\n\n"
-            f"User's Primary Objective: {primary_objective or task.description}\n"
-            f"Task Description: {task.description}\n"
+            f"User's Overall Objective: {primary_objective or task.description}\n"
+            f"THIS SUB-AGENT'S ASSIGNED STEP: '{task.title}'\n"
+            f"Step Description: {task.description}\n"
             f"Worker Output:\n{worker_result.output_text[:8000]}\n\n"
-            "Rigorously evaluate whether the worker output actually fulfilled the User's Primary Objective.\n"
+            "MULTI-AGENT EVALUATION RULE:\n"
+            "This workflow is executed by multiple specialized sub-agents working together in a DAG pipeline. "
+            "You MUST evaluate whether THIS specific sub-agent successfully fulfilled ITS assigned step ('{task.title}'). "
+            "Do NOT penalize this sub-agent for not fulfilling other parts of the overall objective that are handled by other sub-agents in the pipeline (for example, if this sub-agent was assigned to generate an image, evaluate the image quality and do NOT penalize it for not writing a poem or code, which is handled by another step)!\n\n"
             "CRITICAL QUALITY RULES:\n"
-            "- If the worker claimed it cannot access files, refused the task, or went off-topic, it is a CRITICAL FAILURE. "
+            "- If the worker claimed it cannot access files, refused the task, or went off-topic for this specific step, it is a CRITICAL FAILURE. "
             "You MUST set passed: false, status: 'rejected', and quality_score between 0 and 30.\n"
-            "- If the worker executed the task partially or with flaws, set status: 'warning', and quality_score between 50 and 70.\n"
-            "- If the worker output directly fulfills what the user requested (e.g. image generated matching the requested subject, correct code, questions answered), "
+            "- If the worker executed this step partially or with flaws, set status: 'warning', and quality_score between 50 and 70.\n"
+            "- If the worker output directly fulfills what this step requested (e.g. image generated matching the requested subject, correct poem written, code produced), "
             "set passed: true, status: 'approved', and quality_score between 85 and 100.\n\n"
             "Output MUST be valid JSON with this exact schema:\n"
             "{\n"

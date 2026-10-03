@@ -80,7 +80,13 @@ class JSONStructurerAgent:
             "CRITICAL TASK DECOMPOSITION RULES:\n"
             "- For single-domain requests (such as 'make an image of X', 'draw X', 'render photo of X'), do NOT artificially split into multiple steps like 'prompt engineering' and 'rendering'. An image request must be 1 SINGLE cohesive step (domain: 'vision'). Prompt expansion is handled internally by the visual worker.\n"
             "- Never produce two subtasks of domain 'vision' for the same image generation request.\n"
-            "- Only split into 2 to 4 sub-tasks when the user objective genuinely requires multiple distinct disciplines (e.g. 'code + technical diagram', 'study notes analysis + quiz creation', 'financial math + Python script').\n\n"
+            "- CRITICAL DOMAIN RULES:\n"
+            "  * Domain 'code' is EXCLUSIVELY for writing actual computer software, Python scripts, APIs, or software algorithms.\n"
+            "  * NEVER assign domain 'code' to poems, poetry, creative writing, essays, or natural language text! Writing a poem is domain 'audit' (Content/Summarizer Specialist).\n"
+            "  * For compound requests like 'make an image of X and write a poem on it':\n"
+            "    - step_1: Visual Asset Generation for X (domain: 'vision', Worker: 'Flux.1 (Visual Asset Specialist)')\n"
+            "    - step_2: Compose Evocative Poem for X (domain: 'audit', Worker: 'Gemini 2.0 Flash (Summarizer Specialist)', expected_output_type: 'poem_markdown')\n"
+            "  * Only split into 2 to 4 sub-tasks when the user objective genuinely requires multiple distinct disciplines (e.g. 'image + poem', 'code + technical diagram', 'study notes analysis + quiz creation').\n\n"
             "Each sub-task must have:\n"
             "- step_id: e.g. 'step_1', 'step_2'\n"
             "- title: specific descriptive title tailored to what is being executed\n"
@@ -89,7 +95,7 @@ class JSONStructurerAgent:
             "- assigned_worker_model: name of model best suited (e.g. 'Qwen 2.5 Coder (via Groq Cloud)', 'Gemini 2.0 Flash (Summarizer Specialist)', 'Mistral (Legal & Formal Logic Specialist)', 'Flux.1 (Visual Asset Specialist)', 'OpenAI GPT (Auditing Specialist)')\n"
             "- assigned_reviewer_model: 'Gemini 2.0 Flash (Multimodal & Step QA Reviewer)'\n"
             "- required_prerequisites: list of prerequisites (e.g. ['Initial user objective'], ['step_1'])\n"
-            "- expected_output_type: e.g. 'python_module', 'markdown_report', 'rendered_image_url', 'exam_qa_markdown'\n\n"
+            "- expected_output_type: e.g. 'python_module', 'markdown_report', 'rendered_image_url', 'poem_markdown'\n\n"
             "Return strictly valid JSON with this exact schema:\n"
             "{\n"
             '  "primary_objective": "Clear single-sentence encapsulation of the user\'s core goal",\n'
@@ -254,8 +260,25 @@ class JSONStructurerAgent:
             ))
             step_idx += 1
 
-        # Check for Coding / Software Engineering
-        has_code = any(w in p_lower for w in ["code", "python", "script", "program", "api", "function", "backend", "algorithm", "develop", "software", "endpoint", "class", "bot"])
+        # Check for Poetry / Creative Writing / Lyrics
+        has_poem = any(w in p_lower for w in ["poem", "poetry", "rhyme", "sonnet", "ballad", "verse", "lyrics", "haiku"])
+        if has_poem:
+            subtasks.append(StructuredSubTask(
+                step_id=f"step_{step_idx}",
+                title=f"Compose Creative Poem for '{prompt[:40]}...'",
+                domain=DomainType.AUDIT,
+                description=f"Write an evocative, charming, and beautifully styled poem in plain markdown text fulfilling: {prompt}",
+                assigned_worker_model="Gemini 2.0 Flash (Summarizer Specialist)",
+                assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["Creative theme parameters"],
+                expected_output_type="poem_markdown",
+                status=TaskStatus.PENDING
+            ))
+            step_idx += 1
+
+        # Check for Coding / Software Engineering (strictly exclude creative text)
+        explicit_code_words = ["python", "script", "program", "api", "function", "backend", "algorithm", "develop", "software", "endpoint", "class", "bot"]
+        has_code = any(w in p_lower for w in explicit_code_words) and not (has_poem and not any(w in p_lower for w in ["python", "script", "api", "backend", "algorithm"]))
         if has_code:
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",

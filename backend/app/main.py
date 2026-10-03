@@ -62,6 +62,9 @@ from app.utils.file_parser import extract_text_from_file_bytes
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_DIR = UPLOAD_DIR / "generated"
+GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/api/generated-images", StaticFiles(directory=str(GENERATED_DIR)), name="generated-images")
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
