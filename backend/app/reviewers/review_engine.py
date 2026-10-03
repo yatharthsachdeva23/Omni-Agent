@@ -36,6 +36,45 @@ class IntermediateReviewEngine:
         step_id = task.step_id
         reviewer_model = "Gemini 2.0 Flash (Multimodal & Step QA Reviewer)"
 
+        # If Vision task, actively probe the image URL to prevent approving 402 or broken links
+        if domain == DomainType.VISION:
+            image_url = worker_result.artifacts.get("image_url")
+            if not image_url and "![" in worker_result.output_text:
+                match = re.search(r'\!\[.*?\]\((https?://[^\)]+)\)', worker_result.output_text)
+                if match:
+                    image_url = match.group(1)
+
+            if image_url:
+                try:
+                    async with httpx.AsyncClient(timeout=8.0) as probe_client:
+                        probe_resp = await probe_client.get(image_url, follow_redirects=True)
+                        if probe_resp.status_code != 200 or "image/" not in probe_resp.headers.get("content-type", ""):
+                            critique = (
+                                f"CRITICAL VISUAL REJECTION: The generated image URL failed network accessibility check "
+                                f"(HTTP {probe_resp.status_code}: {probe_resp.text[:120]}). The asset cannot be displayed."
+                            )
+                            review = IntermediateReviewResult(
+                                step_id=step_id,
+                                reviewer_model=reviewer_model,
+                                status=ReviewStatus.REJECTED,
+                                quality_score=20,
+                                critique=critique,
+                                recommendations=["Switch to unauthenticated free endpoint without paywalled flags."],
+                                passed=False,
+                                mitigation_required=True
+                            )
+                            neg = NegativeKnowledgeItem(
+                                step_id=step_id,
+                                stage="visual_gate",
+                                issue_type="paywalled_or_broken_image_url",
+                                description=f"Image URL returned HTTP {probe_resp.status_code}.",
+                                mitigation_applied="Flagged failure; penalized step score to 20%.",
+                                prevention_directive_for_downstream="Use unauthenticated image endpoints without paywalled parameter flags."
+                            )
+                            return review, neg
+                except Exception as probe_e:
+                    print(f"[Reviewer Probe] Notice: {probe_e}")
+
         # 1. Primary: Real live call to Google Gemini with JSON mode
         if self.gemini_key:
             try:
