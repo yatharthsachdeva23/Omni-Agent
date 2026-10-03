@@ -37,23 +37,29 @@ def main():
         print("Please create it using: py -3.12 -m venv venv")
         sys.exit(1)
 
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     if args.port is not None:
         port = args.port
     else:
         port = find_available_port(8000)
         if port != 8000:
-            print(f"⚠️  Note: Port 8000 is in use by another application. Auto-binding to port {port}.")
+            print(f"[!] Note: Port 8000 is in use by another application. Auto-binding to port {port}.")
 
     display_host = "localhost" if args.host == "0.0.0.0" else args.host
 
     print("=" * 60)
-    print("🚀 LAUNCHING OMNI AGENT (PYTHON 3.12 + JEV ROUTING CORE)")
+    print(">> LAUNCHING OMNI AGENT (PYTHON 3.12 + JEV ROUTING CORE)")
     print("=" * 60)
-    print(f"• Web UI & API Gateway: http://{display_host}:{port}")
-    print(f"• Interactive Swagger:  http://{display_host}:{port}/docs")
-    print("• System 1 Router:      Jev Engine Online (jev-1.13-free)")
-    print("• Dedicated Reviewer:   Google Gemini 2.0 Flash (Multimodal & QA)")
-    print("• Memory Core:          Common Context Blackboard Active")
+    print(f" * Web UI & API Gateway: http://{display_host}:{port}")
+    print(f" * Interactive Swagger:  http://{display_host}:{port}/docs")
+    print(" * System 1 Router:      Jev Engine Online (jev-1.13-free)")
+    print(" * Dedicated Reviewer:   Google Gemini 2.0 Flash (Multimodal & QA)")
+    print(" * Memory Core:          Common Context Blackboard Active")
     print("=" * 60)
 
     backend_dir = root_dir / "backend"
