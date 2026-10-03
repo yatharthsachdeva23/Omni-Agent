@@ -15,7 +15,10 @@ import {
   Cpu,
   Layers,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Copy,
+  Check,
+  Download
 } from 'lucide-react';
 import {
   StructuredGoal,
@@ -34,6 +37,122 @@ interface LiveExecutionVisualizerProps {
   isExecuting: boolean;
 }
 
+interface FileDownloadInfo {
+  filename: string;
+  content: string;
+  mimeType: string;
+  isImage?: boolean;
+  imageUrl?: string;
+  extension: string;
+}
+
+const parseDeliverableFile = (
+  title: string,
+  text: string,
+  domain: string,
+  artifacts?: Record<string, any>
+): FileDownloadInfo => {
+  const safeName =
+    title
+      .toLowerCase()
+      .replace(/^(modular implementation & architecture for|web & ui implementation for|visual asset render for|compose creative poem for|execution & synthesis of|in-depth synthesis & deliverable generation for)\s*/i, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 36) || 'deliverable';
+
+  // 1. Check for Image asset
+  if (artifacts?.image_url) {
+    return {
+      filename: `${safeName}.jpg`,
+      content: '',
+      mimeType: 'image/jpeg',
+      isImage: true,
+      imageUrl: artifacts.image_url,
+      extension: 'JPG',
+    };
+  }
+
+  // 2. Check for fenced code blocks
+  const codeMatch = text.match(/```([a-zA-Z0-9_+-]*)\s*\n([\s\S]*?)```/);
+  if (codeMatch) {
+    const lang = (codeMatch[1] || '').toLowerCase().trim();
+    const codeContent = codeMatch[2].trim();
+
+    if (lang === 'html' || lang === 'htm' || codeContent.toLowerCase().includes('<!doctype') || codeContent.toLowerCase().includes('<html')) {
+      return {
+        filename: `${safeName}.html`,
+        content: codeContent,
+        mimeType: 'text/html',
+        extension: 'HTML',
+      };
+    }
+    if (lang === 'css') {
+      return {
+        filename: `${safeName}.css`,
+        content: codeContent,
+        mimeType: 'text/css',
+        extension: 'CSS',
+      };
+    }
+    if (lang === 'python' || lang === 'py') {
+      return {
+        filename: `${safeName}.py`,
+        content: codeContent,
+        mimeType: 'text/x-python',
+        extension: 'PY',
+      };
+    }
+    if (lang === 'javascript' || lang === 'js') {
+      return {
+        filename: `${safeName}.js`,
+        content: codeContent,
+        mimeType: 'application/javascript',
+        extension: 'JS',
+      };
+    }
+    if (lang === 'typescript' || lang === 'ts') {
+      return {
+        filename: `${safeName}.ts`,
+        content: codeContent,
+        mimeType: 'application/typescript',
+        extension: 'TS',
+      };
+    }
+    if (lang === 'sql') {
+      return {
+        filename: `${safeName}.sql`,
+        content: codeContent,
+        mimeType: 'application/sql',
+        extension: 'SQL',
+      };
+    }
+    if (lang === 'json') {
+      return {
+        filename: `${safeName}.json`,
+        content: codeContent,
+        mimeType: 'application/json',
+        extension: 'JSON',
+      };
+    }
+    const ext = lang ? lang.toUpperCase() : 'TXT';
+    return {
+      filename: `${safeName}.${lang || 'txt'}`,
+      content: codeContent,
+      mimeType: 'text/plain',
+      extension: ext,
+    };
+  }
+
+  // 3. Fallback: Markdown document or plain text
+  const isMarkdown = text.includes('#') || text.includes('**') || text.includes('\n- ') || domain === 'audit' || domain === 'math';
+  return {
+    filename: `${safeName}.${isMarkdown ? 'md' : 'txt'}`,
+    content: text,
+    mimeType: isMarkdown ? 'text/markdown' : 'text/plain',
+    extension: isMarkdown ? 'MD' : 'TXT',
+  };
+};
+
 export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = ({
   currentStage,
   stageMessage,
@@ -45,6 +164,53 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
 }) => {
   const [activeTab, setActiveTab] = useState<'timeline' | 'blackboard' | 'deliverables'>('timeline');
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopy = (key: string, text: string) => {
+    const codeMatch = text.match(/```(?:[a-zA-Z0-9_+-]*)\s*\n([\s\S]*?)```/);
+    const textToCopy = codeMatch ? codeMatch[1].trim() : text;
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedKey(key);
+    setTimeout(() => {
+      setCopiedKey((curr) => (curr === key ? null : curr));
+    }, 2000);
+  };
+
+  const handleDownload = async (fileInfo: FileDownloadInfo) => {
+    if (fileInfo.isImage && fileInfo.imageUrl) {
+      try {
+        const response = await fetch(fileInfo.imageUrl);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileInfo.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch {
+        const a = document.createElement('a');
+        a.href = fileInfo.imageUrl;
+        a.download = fileInfo.filename;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+      return;
+    }
+
+    const blob = new Blob([fileInfo.content], { type: fileInfo.mimeType });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileInfo.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
 
   const getDomainIcon = (domain: string) => {
     switch (domain.toLowerCase()) {
@@ -229,38 +395,83 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                     </p>
 
                     {/* Worker Output */}
-                    {output && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-[11px] text-neutral-500 font-mono">
-                          <span>Output ({output.worker_model})</span>
-                          <span>{output.execution_time_ms} ms</span>
-                        </div>
-                        {output.artifacts?.image_url && (
-                          <div className="rounded-xl overflow-hidden border border-white/[0.12] bg-[#050505] p-2 space-y-2">
-                            <img
-                              src={output.artifacts.image_url}
-                              alt="Generated Visual Asset"
-                              className="w-full h-auto max-h-96 object-contain rounded-lg shadow-xl"
-                              loading="lazy"
-                            />
-                            <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
-                              <span>Flux.1 Synthesis • 1280x720</span>
-                              <a
-                                href={output.artifacts.image_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-white hover:underline flex items-center gap-1"
+                    {output && (() => {
+                      const fileInfo = parseDeliverableFile(
+                        task.title,
+                        output.output_text,
+                        task.domain,
+                        output.artifacts
+                      );
+                      const isOutputCopied = copiedKey === `step_${task.step_id}`;
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-neutral-500 font-mono">
+                            <span>Output ({output.worker_model}) &bull; {output.execution_time_ms} ms</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleCopy(`step_${task.step_id}`, output.output_text)}
+                                className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.1] text-neutral-300 hover:text-white transition text-[11px] font-mono border border-white/[0.08]"
+                                title="Copy code/text to clipboard"
                               >
-                                Open Full Size &rarr;
-                              </a>
+                                {isOutputCopied ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    <span className="text-emerald-400">Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-neutral-400" />
+                                    <span>Copy</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => handleDownload(fileInfo)}
+                                className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-neutral-200 hover:text-white transition text-[11px] font-mono border border-white/[0.1]"
+                                title={`Download as .${fileInfo.extension.toLowerCase()}`}
+                              >
+                                <Download className="w-3 h-3 text-neutral-300" />
+                                <span>Download (.{fileInfo.extension.toLowerCase()})</span>
+                              </button>
                             </div>
                           </div>
-                        )}
-                        <div className="p-3.5 rounded-xl bg-[#030303] border border-white/[0.06] font-mono text-xs text-neutral-200 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto">
-                          {output.output_text}
+                          {output.artifacts?.image_url && (
+                            <div className="rounded-xl overflow-hidden border border-white/[0.12] bg-[#050505] p-2 space-y-2">
+                              <img
+                                src={output.artifacts.image_url}
+                                alt="Generated Visual Asset"
+                                className="w-full h-auto max-h-96 object-contain rounded-lg shadow-xl"
+                                loading="lazy"
+                              />
+                              <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
+                                <span>Flux.1 Synthesis • 1280x720</span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handleDownload(fileInfo)}
+                                    className="text-neutral-300 hover:text-white flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px]"
+                                    title="Download image (.jpg)"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    <span>Download Image (.jpg)</span>
+                                  </button>
+                                  <a
+                                    href={output.artifacts.image_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-white hover:underline flex items-center gap-1"
+                                  >
+                                    Open Full Size &rarr;
+                                  </a>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          <div className="p-3.5 rounded-xl bg-[#030303] border border-white/[0.06] font-mono text-xs text-neutral-200 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto">
+                            {output.output_text}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Dedicated Gemini Review Inspection Card */}
                     {review && (
@@ -412,45 +623,86 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
           <div className="p-5 rounded-2xl bg-[#080808] border border-white/[0.08] space-y-3">
             <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Generated Deliverables & Assets</h4>
             <div className="space-y-3">
-              {Object.entries(finalEvaluation.deliverables).map(([id, del]) => (
-                <div key={id} className="p-4 rounded-xl bg-[#030303] border border-white/[0.06] space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {getDomainIcon(del.domain)}
-                      <h5 className="text-xs font-medium text-white capitalize">{del.title}</h5>
-                    </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.04] text-neutral-400 uppercase">
-                      {del.domain}
-                    </span>
-                  </div>
-
-                  {del.artifacts?.image_url && (
-                    <div className="rounded-xl overflow-hidden border border-white/[0.12] bg-[#050505] p-2 space-y-2">
-                      <img
-                        src={del.artifacts.image_url}
-                        alt={del.title}
-                        className="w-full h-auto max-h-96 object-contain rounded-lg"
-                        loading="lazy"
-                      />
-                      <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
-                        <span>Flux.1 Asset</span>
-                        <a
-                          href={del.artifacts.image_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-white hover:underline flex items-center gap-1"
+              {Object.entries(finalEvaluation.deliverables).map(([id, del]) => {
+                const fileInfo = parseDeliverableFile(del.title, del.summary, del.domain, del.artifacts);
+                const isDelCopied = copiedKey === `del_${id}`;
+                return (
+                  <div key={id} className="p-4 rounded-xl bg-[#030303] border border-white/[0.06] space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {getDomainIcon(del.domain)}
+                        <h5 className="text-xs font-medium text-white capitalize">{del.title}</h5>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.04] text-neutral-400 uppercase">
+                          {del.domain}
+                        </span>
+                        <button
+                          onClick={() => handleCopy(`del_${id}`, del.summary)}
+                          className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.1] text-neutral-300 hover:text-white transition text-[11px] font-mono border border-white/[0.08]"
+                          title="Copy deliverable content"
                         >
-                          Open Full Size &rarr;
-                        </a>
+                          {isDelCopied ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-400" />
+                              <span className="text-emerald-400">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 text-neutral-400" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleDownload(fileInfo)}
+                          className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.14] text-neutral-200 hover:text-white transition text-[11px] font-mono border border-white/[0.1]"
+                          title={`Download ${fileInfo.filename}`}
+                        >
+                          <Download className="w-3 h-3 text-neutral-300" />
+                          <span>Download (.{fileInfo.extension.toLowerCase()})</span>
+                        </button>
                       </div>
                     </div>
-                  )}
 
-                  <div className="p-3 rounded-xl bg-[#000000] font-mono text-xs text-neutral-300 max-h-48 overflow-y-auto whitespace-pre-wrap border border-white/[0.06]">
-                    {del.summary}
+                    {del.artifacts?.image_url && (
+                      <div className="rounded-xl overflow-hidden border border-white/[0.12] bg-[#050505] p-2 space-y-2">
+                        <img
+                          src={del.artifacts.image_url}
+                          alt={del.title}
+                          className="w-full h-auto max-h-96 object-contain rounded-lg"
+                          loading="lazy"
+                        />
+                        <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
+                          <span>Flux.1 Asset</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleDownload(fileInfo)}
+                              className="text-neutral-300 hover:text-white flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] transition text-[11px]"
+                              title="Download image (.jpg)"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>Download Image (.jpg)</span>
+                            </button>
+                            <a
+                              href={del.artifacts.image_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-white hover:underline flex items-center gap-1"
+                            >
+                              Open Full Size &rarr;
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="p-3 rounded-xl bg-[#000000] font-mono text-xs text-neutral-300 max-h-48 overflow-y-auto whitespace-pre-wrap border border-white/[0.06]">
+                      {del.summary}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
