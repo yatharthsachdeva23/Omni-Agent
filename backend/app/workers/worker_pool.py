@@ -160,7 +160,7 @@ if __name__ == "__main__":
                 )
                 async with httpx.AsyncClient(timeout=12.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_text}]}]}
                     )
                     if resp.status_code == 200:

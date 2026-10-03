@@ -19,7 +19,7 @@ class IntermediateReviewEngine:
     """
     def __init__(self):
         self.api_key = config.GEMINI_API_KEY
-        self.model_name = "gemini-2.0-flash"
+        self.model_name = "gemini-3.5-flash-lite"
         self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
 
     async def review_task(

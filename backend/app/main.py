@@ -55,7 +55,7 @@ async def get_ai_advice(payload: dict):
     prompt = payload.get("prompt", "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt is required")
-    response = advisor_engine.advise(prompt)
+    response = await advisor_engine.advise_async(prompt)
     return response
 
 @app.post("/api/upload")
