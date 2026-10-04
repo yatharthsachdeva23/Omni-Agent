@@ -105,7 +105,7 @@ class WorkerPool:
                             "Content-Type": "application/json"
                         },
                         json={
-                            "model": "qwen-2.5-coder-32b",
+                            "model": "qwen/qwen3.8-27b",
                             "messages": [
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": user_msg}
@@ -117,7 +117,7 @@ class WorkerPool:
                         content = resp.json()["choices"][0]["message"]["content"]
                         return WorkerResult(
                             step_id=task.step_id,
-                            worker_model="Qwen 2.5 Coder (Live Groq API)",
+                            worker_model="Qwen 3.8 27B (Live Groq API)",
                             domain=DomainType.CODE,
                             output_text=content,
                             artifacts={"code_source": "live_groq_qwen_coder"},
@@ -441,7 +441,7 @@ if __name__ == "__main__":
                             "Content-Type": "application/json"
                         },
                         json={
-                            "model": "llama-3.3-70b-versatile",
+                            "model": "openai/gpt-oss-120b",
                             "messages": [
                                 {"role": "system", "content": "You are the Senior Summarizer Specialist for OmniTask AI. Produce an authoritative executive synthesis."},
                                 {"role": "user", "content": prompt_text}
@@ -644,7 +644,7 @@ if __name__ == "__main__":
                             "Content-Type": "application/json"
                         },
                         json={
-                            "model": "llama-3.3-70b-versatile",
+                            "model": "openai/gpt-oss-120b",
                             "messages": [
                                 {"role": "system", "content": system_content},
                                 {"role": "user", "content": user_msg}
@@ -656,7 +656,7 @@ if __name__ == "__main__":
                         content = resp.json()["choices"][0]["message"]["content"]
                         return WorkerResult(
                             step_id=task.step_id,
-                            worker_model="OpenAI Specialist (Groq Llama-3.3 Fallback)",
+                            worker_model="OpenAI Specialist (Groq GPT-OSS Fallback)",
                             domain=DomainType.AUDIT,
                             output_text=content,
                             artifacts={"audit_model": "groq-auditor-fallback"},

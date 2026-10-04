@@ -36,7 +36,7 @@ class IntermediateReviewEngine:
     ) -> Tuple[IntermediateReviewResult, Optional[NegativeKnowledgeItem]]:
         domain = task.domain
         step_id = task.step_id
-        reviewer_model = "Gemini 2.0 Flash (Multimodal & Step QA Reviewer)"
+        reviewer_model = "Gemini 3.5 Flash (Multimodal & Step QA Reviewer)"
 
         # If Vision task, actively verify the image is accessible and not broken
         if domain == DomainType.VISION:
@@ -190,7 +190,7 @@ class IntermediateReviewEngine:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    "model": "openai/gpt-oss-120b",
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_msg}
@@ -202,7 +202,7 @@ class IntermediateReviewEngine:
             if resp.status_code == 200:
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
-                return self._parse_review_json(content, task, "Groq Llama-3.3 Reviewer")
+                return self._parse_review_json(content, task, "Groq GPT-OSS Reviewer")
         return None, None
 
     def _parse_review_json(self, raw_json: str, task: StructuredSubTask, reviewer_name: str) -> Tuple[Optional[IntermediateReviewResult], Optional[NegativeKnowledgeItem]]:

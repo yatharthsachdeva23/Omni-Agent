@@ -130,7 +130,7 @@ class AIAdvisorEngine:
 
     async def _call_groq_advisor(self, user_query: str) -> Optional[AdvisorResponse]:
         """
-        Calls Groq Cloud (llama-3.3-70b-versatile or qwen-2.5-coder-32b) with JSON mode.
+        Calls Groq Cloud (openai/gpt-oss-120b or qwen/qwen3.8-27b) with JSON mode.
         """
         system_prompt = (
             "You are the AI Advisor for OmniTask AI.\n"
@@ -147,7 +147,7 @@ class AIAdvisorEngine:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    "model": "openai/gpt-oss-120b",
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": f"User Goal: {user_query}"}
