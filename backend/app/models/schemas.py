@@ -62,6 +62,8 @@ class WorkerResult(BaseModel):
     worker_model: str
     domain: DomainType
     output_text: str
+    user_deliverable: Optional[str] = None
+    internal_handover: Dict[str, Any] = Field(default_factory=dict)
     artifacts: Dict[str, Any] = Field(default_factory=dict)
     execution_time_ms: float = 0.0
     success: bool = True
@@ -90,6 +92,7 @@ class BlackboardState(BaseModel):
     structured_goal: Optional[StructuredGoal] = None
     global_prerequisites: List[str] = Field(default_factory=list)
     completed_outputs: Dict[str, WorkerResult] = Field(default_factory=dict)
+    inter_agent_handovers: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     intermediate_reviews: Dict[str, IntermediateReviewResult] = Field(default_factory=dict)
     negative_knowledge: List[NegativeKnowledgeItem] = Field(default_factory=list)
     current_step_id: Optional[str] = None

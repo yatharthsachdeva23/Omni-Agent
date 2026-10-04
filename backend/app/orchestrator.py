@@ -130,8 +130,46 @@ class OmniOrchestrator:
             await asyncio.sleep(0.5)
 
             review_result, negative_knowledge = await self.review_engine.review_task(
-                task, worker_result, primary_objective=blackboard.original_prompt
+                task,
+                worker_result,
+                primary_objective=blackboard.original_prompt,
+                prior_outputs=context_packet.get("cumulative_prior_outputs", {}),
+                cumulative_handovers=context_packet.get("cumulative_handovers", {})
             )
+
+            # Autonomous Self-Correction Loop:
+            # If reviewer rejected deliverable (score < 45 or passed=False), attempt 1 auto-correction
+            if (not review_result.passed or review_result.quality_score < 45):
+                critique_note = review_result.critique or "Quality check failed."
+                retry_avoidance = f"SELF-CORRECTION DIRECTIVE: Reviewer rejected prior attempt. Issue: {critique_note}. Rectify this strictly."
+                if "negative_knowledge_avoidance_rules" not in context_packet:
+                    context_packet["negative_knowledge_avoidance_rules"] = []
+                context_packet["negative_knowledge_avoidance_rules"].append(retry_avoidance)
+
+                yield self._format_sse("STEP_RETRY_INITIATED", {
+                    "step_id": step_id,
+                    "title": task.title,
+                    "rejection_critique": critique_note,
+                    "quality_score": review_result.quality_score,
+                    "action": "Autonomous self-correction: Re-executing sub-agent with reviewer critique applied..."
+                })
+
+                await asyncio.sleep(0.5)
+
+                worker_result = await self.worker_pool.execute_task(task, context_packet)
+                yield self._format_sse("WORKER_COMPLETED", {
+                    "step_id": step_id,
+                    "worker_result": worker_result.model_dump(),
+                    "is_retry": True
+                })
+
+                review_result, negative_knowledge = await self.review_engine.review_task(
+                    task,
+                    worker_result,
+                    primary_objective=blackboard.original_prompt,
+                    prior_outputs=context_packet.get("cumulative_prior_outputs", {}),
+                    cumulative_handovers=context_packet.get("cumulative_handovers", {})
+                )
 
             # Commit to Blackboard
             blackboard.record_worker_output(step_id, worker_result)

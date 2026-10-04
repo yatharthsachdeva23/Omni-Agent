@@ -2,6 +2,7 @@ import json
 import re
 import ast
 import os
+import base64
 from pathlib import Path
 import httpx
 from typing import Tuple, Optional, Dict, Any
@@ -32,31 +33,75 @@ class IntermediateReviewEngine:
         self,
         task: StructuredSubTask,
         worker_result: WorkerResult,
-        primary_objective: str = ""
+        primary_objective: str = "",
+        prior_outputs: Optional[Dict[str, Any]] = None,
+        cumulative_handovers: Optional[Dict[str, Any]] = None
     ) -> Tuple[IntermediateReviewResult, Optional[NegativeKnowledgeItem]]:
         domain = task.domain
         step_id = task.step_id
         reviewer_model = "Gemini 3.5 Flash (Multimodal & Step QA Reviewer)"
 
-        # If Vision task, actively verify the image is accessible and not broken
+        # Prepare blackboard context summary for reviewer cross-referencing
+        prior_lines = []
+        if cumulative_handovers:
+            for s_id, h_data in cumulative_handovers.items():
+                if isinstance(h_data, dict):
+                    parts = [f"{k}: '{v}'" for k, v in h_data.items() if v]
+                    if parts:
+                        prior_lines.append(f"- Stage {s_id} Handover: {', '.join(parts)}")
+        if prior_outputs:
+            for s_id, p_data in prior_outputs.items():
+                dom = p_data.get("domain", "")
+                deliv = (p_data.get("user_deliverable") or p_data.get("summary") or "")[:200]
+                if deliv:
+                    prior_lines.append(f"- Stage {s_id} ({dom}): {deliv}")
+        prior_context_summary = "\n".join(prior_lines) if prior_lines else "None (Initial Stage)"
+
+        image_base64 = None
+        image_mime = "image/jpeg"
+
+        # If Vision task, verify asset integrity and extract base64 bytes for multimodal inspection
         if domain == DomainType.VISION:
             local_path = worker_result.artifacts.get("local_path")
             image_url = worker_result.artifacts.get("image_url")
             is_accessible = False
+            resolved_file = None
 
             if local_path and os.path.exists(local_path) and os.path.getsize(local_path) > 500:
                 is_accessible = True
+                resolved_file = Path(local_path)
             elif image_url and image_url.startswith("/api/generated-images/"):
                 fname = image_url.split("/")[-1]
                 local_f = Path(__file__).resolve().parent.parent.parent / "uploads" / "generated" / fname
-                is_accessible = local_f.exists() and local_f.stat().st_size > 500
+                if local_f.exists() and local_f.stat().st_size > 500:
+                    is_accessible = True
+                    resolved_file = local_f
             elif image_url and image_url.startswith("http"):
                 try:
                     async with httpx.AsyncClient(timeout=6.0) as probe_client:
                         probe_resp = await probe_client.get(image_url, follow_redirects=True)
-                        is_accessible = (probe_resp.status_code == 200 and "image/" in probe_resp.headers.get("content-type", ""))
+                        if probe_resp.status_code == 200 and "image/" in probe_resp.headers.get("content-type", "") and len(probe_resp.content) > 500:
+                            is_accessible = True
+                            image_base64 = base64.b64encode(probe_resp.content).decode("utf-8")
+                            content_type = probe_resp.headers.get("content-type", "").split(";")[0].strip()
+                            if content_type:
+                                image_mime = content_type
                 except Exception:
                     is_accessible = False
+
+            if resolved_file and resolved_file.exists():
+                try:
+                    img_bytes = resolved_file.read_bytes()
+                    if len(img_bytes) > 500:
+                        image_base64 = base64.b64encode(img_bytes).decode("utf-8")
+                        if resolved_file.suffix.lower() == ".png":
+                            image_mime = "image/png"
+                        elif resolved_file.suffix.lower() == ".webp":
+                            image_mime = "image/webp"
+                        else:
+                            image_mime = "image/jpeg"
+                except Exception as read_err:
+                    print(f"[Reviewer] Error loading image bytes: {read_err}")
 
             if not is_accessible:
                 critique = (
@@ -83,10 +128,17 @@ class IntermediateReviewEngine:
                 )
                 return review, neg
 
-        # 1. Primary: Real live call to Google Gemini with JSON mode
+        # 1. Primary: Real live call to Google Gemini with JSON mode (multimodal inspection for vision)
         if self.gemini_key:
             try:
-                live_review, live_neg = await self._call_live_gemini(task, worker_result, primary_objective)
+                live_review, live_neg = await self._call_live_gemini(
+                    task,
+                    worker_result,
+                    primary_objective,
+                    prior_context_summary=prior_context_summary,
+                    image_base64=image_base64,
+                    image_mime=image_mime
+                )
                 if live_review:
                     return live_review, live_neg
             except Exception as e:
@@ -95,7 +147,12 @@ class IntermediateReviewEngine:
         # 2. Secondary: Live Groq reviewer fallback with JSON mode
         if self.groq_key:
             try:
-                groq_review, groq_neg = await self._call_groq_reviewer(task, worker_result, primary_objective)
+                groq_review, groq_neg = await self._call_groq_reviewer(
+                    task,
+                    worker_result,
+                    primary_objective,
+                    prior_context_summary=prior_context_summary
+                )
                 if groq_review:
                     return groq_review, groq_neg
             except Exception as e:
@@ -108,46 +165,93 @@ class IntermediateReviewEngine:
         self,
         task: StructuredSubTask,
         worker_result: WorkerResult,
-        primary_objective: str = ""
+        primary_objective: str = "",
+        prior_context_summary: str = "",
+        image_base64: Optional[str] = None,
+        image_mime: str = "image/jpeg"
     ) -> Tuple[Optional[IntermediateReviewResult], Optional[NegativeKnowledgeItem]]:
         """
         Executes a real live call to Google Gemini with structured JSON quality evaluation.
-        Evaluates task fulfillment honestly: failing or off-task workers receive a rejected status and low score.
+        For DomainType.VISION, inspects the actual image bytes via inline_data parts.
         """
-        prompt_text = (
-            f"You are the Gemini Quality Reviewer for OmniTask AI.\n"
-            f"Strictly review the following output from Sub-Agent {worker_result.worker_model} for step '{task.title}'.\n\n"
-            f"User's Overall Objective: {primary_objective or task.description}\n"
-            f"THIS SUB-AGENT'S ASSIGNED STEP: '{task.title}'\n"
-            f"Step Description: {task.description}\n"
-            f"Worker Output:\n{worker_result.output_text[:8000]}\n\n"
-            "MULTI-AGENT EVALUATION RULE:\n"
-            "This workflow is executed by multiple specialized sub-agents working together in a DAG pipeline. "
-            "You MUST evaluate whether THIS specific sub-agent successfully fulfilled ITS assigned step ('{task.title}'). "
-            "Do NOT penalize this sub-agent for not fulfilling other parts of the overall objective that are handled by other sub-agents in the pipeline (for example, if this sub-agent was assigned to generate an image, evaluate the image quality and do NOT penalize it for not writing a poem or code, which is handled by another step)! "
-            "If this step is for a webpage, frontend UI, or replica, evaluate whether the HTML/CSS markup is clean, semantic, and well-designed. Do NOT expect Python code if the task is to build a webpage or UI replica!\n\n"
-            "CRITICAL QUALITY RULES:\n"
-            "- If the worker claimed it cannot access files, refused the task, or went off-topic for this specific step, it is a CRITICAL FAILURE. "
-            "You MUST set passed: false, status: 'rejected', and quality_score between 0 and 30.\n"
-            "- If the worker executed this step partially or with flaws, set status: 'warning', and quality_score between 50 and 70.\n"
-            "- If the worker output directly fulfills what this step requested (e.g. image generated matching the requested subject, correct poem written, code produced), "
-            "set passed: true, status: 'approved', and quality_score between 85 and 100.\n\n"
-            "Output MUST be valid JSON with this exact schema:\n"
-            "{\n"
-            '  "passed": boolean,\n'
-            '  "status": "approved" | "rejected" | "warning",\n'
-            '  "quality_score": integer (0 to 100),\n'
-            '  "critique": "Detailed critique explaining strengths or failures",\n'
-            '  "recommendations": ["Recommendation 1", ...],\n'
-            '  "negative_knowledge_directive": "Avoidance directive for downstream agents"\n'
-            "}"
-        )
+        if task.domain == DomainType.VISION and image_base64:
+            prompt_text = (
+                f"You are the Gemini Multimodal Vision Quality Reviewer for OmniTask AI.\n"
+                f"You are directly inspecting the visual image generated for step '{task.title}'.\n\n"
+                f"User's Overall Objective: {primary_objective or task.description}\n"
+                f"Assigned Step: '{task.title}'\n"
+                f"Step Description: {task.description}\n"
+                f"Resolved Target Subject: {worker_result.artifacts.get('resolved_subject', '')}\n"
+                f"Preceding Blackboard Context & Handovers:\n{prior_context_summary}\n\n"
+                "MULTIMODAL VISUAL INSPECTION DIRECTIVES:\n"
+                "1. Directly inspect the attached image provided via inline multimodal data.\n"
+                "2. Determine what physical object, entity, or scene is visually depicted in the image.\n"
+                "3. Cross-reference the depicted content against:\n"
+                "   - The target subject resolved for this step.\n"
+                "   - The secret answer or target established by upstream steps on the Blackboard (e.g., if Step 1 created a riddle about a pen, does this image clearly depict a pen?).\n"
+                "   - The user's primary objective.\n"
+                "4. SCORING & PASS/FAIL CRITERIA:\n"
+                "   - If the image depicts the requested target subject/object clearly and cleanly, set passed: true, status: 'approved', and quality_score between 85 and 98.\n"
+                "   - If the image is unrelated, depicts the wrong object, is a generic abstract pattern, or fails the core objective, set passed: false, status: 'rejected', and quality_score between 15 and 45.\n"
+                "5. In your critique, explicitly state what you visually observed in the image and how it aligns with the task.\n\n"
+                "Output MUST be valid JSON with this exact schema:\n"
+                "{\n"
+                '  "passed": boolean,\n'
+                '  "status": "approved" | "rejected" | "warning",\n'
+                '  "quality_score": integer (0 to 100),\n'
+                '  "critique": "Explicit visual observation and quality critique",\n'
+                '  "recommendations": ["Recommendation 1", ...],\n'
+                '  "negative_knowledge_directive": "Directive for downstream agents"\n'
+                "}"
+            )
+            parts = [
+                {"text": prompt_text},
+                {
+                    "inline_data": {
+                        "mime_type": image_mime,
+                        "data": image_base64
+                    }
+                }
+            ]
+        else:
+            prompt_text = (
+                f"You are the Gemini Quality Reviewer for OmniTask AI.\n"
+                f"Strictly review the following deliverable from Sub-Agent {worker_result.worker_model} for step '{task.title}'.\n\n"
+                f"User's Overall Objective: {primary_objective or task.description}\n"
+                f"THIS SUB-AGENT'S ASSIGNED STEP: '{task.title}'\n"
+                f"Step Description: {task.description}\n"
+                f"Preceding Blackboard Context:\n{prior_context_summary}\n\n"
+                f"Worker Output:\n{worker_result.output_text[:8000]}\n\n"
+                "MULTI-AGENT EVALUATION RULE:\n"
+                "This workflow is executed by multiple specialized sub-agents working together in a DAG pipeline. "
+                "You MUST evaluate whether THIS specific sub-agent successfully fulfilled ITS assigned step ('{task.title}'). "
+                "Do NOT penalize this sub-agent for not fulfilling other parts of the overall objective that are handled by other sub-agents in the pipeline! "
+                "If this step is for a webpage, frontend UI, or replica, evaluate whether the HTML/CSS markup is clean, semantic, and well-designed. Do NOT expect Python code if the task is to build a webpage or UI replica!\n\n"
+                "DUAL-CHANNEL SANITY RULE:\n"
+                "The deliverable shown above has been sanitized for the user. Verify that it contains no awkward internal conversational leaks to other agents (e.g. '(For the requested image, please produce...') in the user-facing text.\n\n"
+                "CRITICAL QUALITY RULES:\n"
+                "- If the worker claimed it cannot access files, refused the task, or went off-topic for this specific step, it is a CRITICAL FAILURE. "
+                "You MUST set passed: false, status: 'rejected', and quality_score between 0 and 30.\n"
+                "- If the worker executed this step partially or with flaws, set status: 'warning', and quality_score between 50 and 70.\n"
+                "- If the worker output directly fulfills what this step requested, "
+                "set passed: true, status: 'approved', and quality_score between 85 and 100.\n\n"
+                "Output MUST be valid JSON with this exact schema:\n"
+                "{\n"
+                '  "passed": boolean,\n'
+                '  "status": "approved" | "rejected" | "warning",\n'
+                '  "quality_score": integer (0 to 100),\n'
+                '  "critique": "Detailed critique explaining strengths or failures",\n'
+                '  "recommendations": ["Recommendation 1", ...],\n'
+                '  "negative_knowledge_directive": "Avoidance directive for downstream agents"\n'
+                "}"
+            )
+            parts = [{"text": prompt_text}]
 
         url = f"{self.endpoint}?key={self.gemini_key}"
         payload = {
             "contents": [
                 {
-                    "parts": [{"text": prompt_text}]
+                    "parts": parts
                 }
             ],
             "generationConfig": {
@@ -156,19 +260,20 @@ class IntermediateReviewEngine:
             }
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=18.0) as client:
             resp = await client.post(url, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
                 raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return self._parse_review_json(raw_text, task, "Gemini 2.0 Flash (Live API)")
+                return self._parse_review_json(raw_text, task, "Gemini 3.5 Flash (Live API)")
         return None, None
 
     async def _call_groq_reviewer(
         self,
         task: StructuredSubTask,
         worker_result: WorkerResult,
-        primary_objective: str = ""
+        primary_objective: str = "",
+        prior_context_summary: str = ""
     ) -> Tuple[Optional[IntermediateReviewResult], Optional[NegativeKnowledgeItem]]:
         system_prompt = (
             "You are the Strict Quality Reviewer for OmniTask AI.\n"
@@ -179,6 +284,7 @@ class IntermediateReviewEngine:
         user_msg = (
             f"User Objective: {primary_objective or task.description}\n"
             f"Step Title: {task.title}\n"
+            f"Preceding Blackboard Context:\n{prior_context_summary}\n\n"
             f"Worker Output:\n{worker_result.output_text[:6000]}"
         )
 

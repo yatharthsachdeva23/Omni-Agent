@@ -571,6 +571,41 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
             </div>
           </div>
 
+          {/* Inter-Agent Handovers (Dual-Channel State) */}
+          {blackboard.inter_agent_handovers && Object.keys(blackboard.inter_agent_handovers).length > 0 && (
+            <div className="p-5 rounded-2xl bg-[#080808] border border-white/[0.08] space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                  Inter-Agent Handovers & Dual-Channel Coordination
+                </h4>
+                <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/[0.08] px-2 py-0.5 rounded border border-cyan-500/20">
+                  Leak Prevention Shield
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                Internal parameters, directives, and target objects passed privately between swarm specialists (cleanly decoupled from user deliverables):
+              </p>
+              <div className="space-y-2 font-mono text-xs">
+                {Object.entries(blackboard.inter_agent_handovers).map(([stepId, handoverData]) => (
+                  <div key={stepId} className="p-3 rounded-xl bg-[#030303] border border-white/[0.06] space-y-1.5">
+                    <div className="flex items-center justify-between text-neutral-400 text-[11px]">
+                      <span className="font-semibold text-white uppercase">STAGE {stepId} &rarr; DOWNSTREAM AGENTS</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                      {Object.entries(handoverData).map(([k, v]) => (
+                        <div key={k} className="p-2 rounded bg-white/[0.03] border border-white/[0.04]">
+                          <span className="text-neutral-500">{k}:</span>{' '}
+                          <span className="text-cyan-300 font-semibold">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Cumulative Outputs Ledger */}
           <div className="p-5 rounded-2xl bg-[#080808] border border-white/[0.08] space-y-3">
             <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">

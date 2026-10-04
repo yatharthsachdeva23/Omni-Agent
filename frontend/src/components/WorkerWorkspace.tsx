@@ -164,6 +164,9 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
       setActiveSubtask(data);
       setCurrentStage('EXECUTING');
       setStageMessage(`Worker: ${data.assigned_worker || 'Specialist'} executing '${data.title}'...`);
+    } else if (eventName === 'STEP_RETRY_INITIATED') {
+      setCurrentStage('EXECUTING');
+      setStageMessage(`Auto-Correction: ${data.rejection_critique || 'Refining deliverable'}...`);
     } else if (eventName === 'INTERMEDIATE_REVIEW_COMPLETED') {
       if (data.blackboard_snapshot) {
         setBlackboard(data.blackboard_snapshot);

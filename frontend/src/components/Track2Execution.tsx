@@ -245,6 +245,9 @@ export const Track2Execution: React.FC<Track2ExecutionProps> = ({
       });
     } else if (eventName === 'SUBAGENT_STARTED') {
       setActiveSubtask(data);
+    } else if (eventName === 'STEP_RETRY_INITIATED') {
+      setCurrentStage('EXECUTING');
+      setStageMessage(`Auto-Correction: ${data.rejection_critique || 'Refining deliverable'}...`);
     } else if (eventName === 'INTERMEDIATE_REVIEW_COMPLETED') {
       if (data.blackboard_snapshot) {
         setBlackboard(data.blackboard_snapshot);

@@ -33,6 +33,8 @@ export interface WorkerResult {
   worker_model: string;
   domain: string;
   output_text: string;
+  user_deliverable?: string;
+  internal_handover?: Record<string, any>;
   artifacts: Record<string, any>;
   execution_time_ms: number;
   success: boolean;
@@ -74,6 +76,7 @@ export interface BlackboardSnapshot {
   completed_outputs: Record<string, WorkerResult>;
   intermediate_reviews: Record<string, IntermediateReviewResult>;
   negative_knowledge: NegativeKnowledgeItem[];
+  inter_agent_handovers?: Record<string, Record<string, any>>;
   current_step_id?: string;
   audit_trail: Array<{
     timestamp: number;

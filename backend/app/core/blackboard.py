@@ -22,6 +22,7 @@ class CommonContextBlackboard:
         self.global_prerequisites: List[str] = []
         self.ingested_files: List[IngestedFile] = []
         self.completed_outputs: Dict[str, WorkerResult] = {}
+        self.inter_agent_handovers: Dict[str, Dict[str, Any]] = {}
         self.intermediate_reviews: Dict[str, IntermediateReviewResult] = {}
         self.negative_knowledge: List[NegativeKnowledgeItem] = []
         self.current_step_id: Optional[str] = None
@@ -50,7 +51,7 @@ class CommonContextBlackboard:
         Supplies the sub-agent with everything it needs before starting:
         - Baseline objective and constraints
         - Global prerequisites & ingested file references
-        - Previous step outputs (cumulative knowledge)
+        - Previous step outputs & inter-agent handovers
         - NEGATIVE KNOWLEDGE: warnings, past errors, and avoidance directives
         """
         target_subtask = None
@@ -60,15 +61,17 @@ class CommonContextBlackboard:
                     target_subtask = st
                     break
 
-        # Compile previous verified outputs
+        # Compile previous verified outputs and handovers
         prior_knowledge = {}
         for prev_step_id, worker_res in self.completed_outputs.items():
             review = self.intermediate_reviews.get(prev_step_id)
+            handover = worker_res.internal_handover or self.inter_agent_handovers.get(prev_step_id, {})
             prior_knowledge[prev_step_id] = {
                 "domain": worker_res.domain,
                 "summary": worker_res.output_text[:300] + ("..." if len(worker_res.output_text) > 300 else ""),
                 "full_output": worker_res.output_text,
                 "artifacts": worker_res.artifacts,
+                "handover": handover,
                 "review_score": review.quality_score if review else 100,
                 "review_critique": review.critique if review else "Approved without remarks"
             }
@@ -86,6 +89,7 @@ class CommonContextBlackboard:
             "global_prerequisites": self.global_prerequisites,
             "current_step": target_subtask.model_dump() if target_subtask else {"step_id": step_id},
             "cumulative_prior_outputs": prior_knowledge,
+            "cumulative_handovers": self.inter_agent_handovers,
             "negative_knowledge_avoidance_rules": avoidance_rules,
             "ingested_files": [
                 {
@@ -103,9 +107,12 @@ class CommonContextBlackboard:
 
     def record_worker_output(self, step_id: str, result: WorkerResult):
         self.completed_outputs[step_id] = result
+        if result.internal_handover:
+            self.inter_agent_handovers[step_id] = result.internal_handover
         self._log_audit("WORKER_OUTPUT_RECORDED", f"Step {step_id} output saved", {
             "worker_model": result.worker_model,
             "domain": result.domain,
+            "has_handover": bool(result.internal_handover),
             "execution_time_ms": result.execution_time_ms
         })
 
@@ -135,6 +142,7 @@ class CommonContextBlackboard:
             structured_goal=self.structured_goal,
             global_prerequisites=self.global_prerequisites,
             completed_outputs=self.completed_outputs,
+            inter_agent_handovers=self.inter_agent_handovers,
             intermediate_reviews=self.intermediate_reviews,
             negative_knowledge=self.negative_knowledge,
             current_step_id=self.current_step_id,

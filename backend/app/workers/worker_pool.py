@@ -9,6 +9,39 @@ from app.models.schemas import (
     StructuredSubTask,
 )
 from app.config import config
+from app.utils.handover_extractor import extract_and_sanitize_handover
+
+def format_blackboard_prior_knowledge(
+    prior_outputs: Dict[str, Any],
+    cumulative_handovers: Optional[Dict[str, Any]] = None
+) -> str:
+    """
+    Renders structured, readable markdown of all preceding stage deliverables,
+    decisions, and inter-agent handovers from the Blackboard for complete swarm coherence.
+    """
+    if not prior_outputs and not cumulative_handovers:
+        return ""
+    blocks = []
+    if prior_outputs:
+        for step_id, data in prior_outputs.items():
+            domain = data.get("domain", "step")
+            output = data.get("full_output", "") or data.get("summary", "")
+            artifacts = data.get("artifacts", {})
+            art_lines = [f"  * {k}: {v}" for k, v in artifacts.items() if k not in ["is_verified", "bytes_len", "local_path"]]
+            art_str = ("\nKey Artifacts:\n" + "\n".join(art_lines)) if art_lines else ""
+
+            # Check for handover data
+            handover_data = data.get("handover", {}) or (cumulative_handovers.get(step_id, {}) if cumulative_handovers else {})
+            handover_str = ""
+            if handover_data:
+                h_lines = [f"  * {k}: {v}" for k, v in handover_data.items()]
+                handover_str = "\nDownstream Handover Directives:\n" + "\n".join(h_lines)
+
+            blocks.append(
+                f"=== COMPLETED STAGE: {step_id.upper()} ({domain.upper()}) ===\n"
+                f"{output[:3500]}\n{art_str}{handover_str}"
+            )
+    return "\n\n[COMMON CONTEXT BLACKBOARD - PREVIOUS SUB-AGENT DELIVERABLES & DECISIONS]\n" + "\n\n".join(blocks)
 
 class WorkerPool:
     """
@@ -50,22 +83,24 @@ class WorkerPool:
             if file_blocks:
                 attached_files_text = "\n\n[USER ATTACHED DOCUMENTS & REFERENCE DATA]\n" + "\n\n".join(file_blocks)
 
-        # Route to specialist sub-agent (ensure poetry and creative text are NEVER routed to code generator)
+        cumulative_handovers = blackboard_context.get("cumulative_handovers", {})
+
+        # Route to specialist sub-agent with full Common Context Blackboard continuity
         is_creative_writing = any(w in task.title.lower() or w in task.description.lower() for w in ["poem", "poetry", "rhyme", "sonnet", "ballad", "creative story", "lyrics", "haiku"])
         if is_creative_writing:
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
         elif domain == DomainType.CODE or "qwen" in assigned_model.lower():
-            result = await self._run_qwen_coder(task, objective, prior_outputs, avoidance_rules, attached_files_text)
+            result = await self._run_qwen_coder(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
         elif "summary" in task.title.lower() or "gemini" in assigned_model.lower():
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
         elif domain in [DomainType.MATH, "legal_logic"] or "mistral" in assigned_model.lower():
-            result = await self._run_mistral_logic(task, objective, prior_outputs, avoidance_rules, attached_files_text)
+            result = await self._run_mistral_logic(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
         elif domain == DomainType.VISION or "flux" in assigned_model.lower():
-            result = await self._run_flux_visual(task, objective, prior_outputs, avoidance_rules)
+            result = await self._run_flux_visual(task, objective, prior_outputs, avoidance_rules, cumulative_handovers)
         elif "openai" in assigned_model.lower() or domain == DomainType.AUDIT:
-            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text)
+            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
         else:
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         result.execution_time_ms = round(elapsed_ms + 180.0, 1)
@@ -73,53 +108,46 @@ class WorkerPool:
         result.step_id = step_id
         result.domain = domain
 
-        # Post-execution secrecy sanitization:
-        # Strip answer spoilers and internal image generator directives from visible output
-        is_secrecy_requested = any(w in objective.lower() for w in [
-            "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
-            "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
-            "riddle", "guess", "spoiler", "secret"
-        ])
+        # Universal Dual-Channel Output Separation & Inter-Agent Handover Extraction
+        clean_user_deliverable, handover = extract_and_sanitize_handover(
+            result.output_text,
+            primary_objective=objective,
+            domain=str(domain)
+        )
+        result.output_text = clean_user_deliverable
+        result.user_deliverable = clean_user_deliverable
+        result.internal_handover = handover
 
-        if is_secrecy_requested and result.output_text and result.domain in [DomainType.AUDIT, "summary", DomainType.CODE]:
-            # 1. Extract <secret_answer>...</secret_answer>
-            secret_match = re.search(r"<secret_answer>\s*(.*?)\s*</secret_answer>", result.output_text, flags=re.IGNORECASE)
-            if secret_match:
-                result.artifacts["secret_answer"] = secret_match.group(1).strip()
-                result.output_text = re.sub(r"<secret_answer>.*?</secret_answer>", "", result.output_text, flags=re.IGNORECASE).strip()
-
-            # 2. Extract and strip parenthetical directives (e.g. "(For the requested image of the object, please produce a picture of a pen.)")
-            leak_pattern = r"\n*\([^\n)]*(?:requested image|produce a picture|picture of a|image of a|image of the object)[^\n)]*\)\s*$"
-            leak_match = re.search(leak_pattern, result.output_text, flags=re.IGNORECASE)
-            if leak_match:
-                if not result.artifacts.get("secret_answer"):
-                    obj_match = re.search(r"(?:picture of a|picture of an|picture of|produce a|produce an|image of a|image of an)\s+([a-zA-Z0-9\s_-]+?)(?:\.|\)|$)", leak_match.group(0), flags=re.IGNORECASE)
-                    if obj_match:
-                        clean_obj = obj_match.group(1).strip().rstrip(".)")
-                        if clean_obj:
-                            result.artifacts["secret_answer"] = clean_obj
-                result.output_text = re.sub(leak_pattern, "", result.output_text, flags=re.IGNORECASE).strip()
-
-            result.output_text = re.sub(r"\n*\(For the requested image[\s\S]*?\)\s*$", "", result.output_text, flags=re.IGNORECASE).strip()
+        if handover.get("secret_answer"):
+            result.artifacts["secret_answer"] = handover["secret_answer"]
+        if handover.get("target_subject"):
+            result.artifacts["target_subject"] = handover["target_subject"]
+        if handover.get("downstream_directive"):
+            result.artifacts["downstream_directive"] = handover["downstream_directive"]
 
         return result
 
     # 1. CODING SPECIALIST: Qwen 2.5 Coder (Groq -> Gemini -> OpenRouter -> Dynamic Generator)
-    async def _run_qwen_coder(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
+    async def _run_qwen_coder(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None) -> WorkerResult:
+        prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
         system_prompt = (
             "You are Qwen 2.5 Coder, the elite polyglot software engineering specialist for OmniTask AI.\n"
             "Analyze the task objective and requirements carefully.\n"
             "Deliver clean, production-grade, functional code matching the exact domain and language requested:\n"
+            "MULTI-AGENT CONTINUITY DIRECTIVE:\n"
+            "If preceding stage deliverables or handovers exist on the Common Context Blackboard, maintain 100% architectural and logical continuity with them.\n"
             "- For frontend web tasks, UI replicas, or landing pages: output complete, standalone, self-contained HTML5 deliverables. ALWAYS embed all CSS styles directly inside <style>...</style> tags in the <head> and all interactive JavaScript inside <script>...</script> tags before </body>. NEVER link to external local files like href='styles.css' or src='script.js' that do not exist on the user's computer, so the downloaded HTML file renders beautifully and works completely on its own when double-clicked. NEVER wrap frontend web code inside an unnecessary Python script unless explicitly requested.\n"
             "- For backend services, scripts, or algorithms: write clean, typed, modular code (e.g. Python, TypeScript, Go, etc.) as requested.\n"
             "- For database tasks: output clean ANSI SQL.\n"
-            "Always output the actual executable source code directly within proper language-tagged markdown code blocks.\n"
+            "COLLABORATIVE DUAL-CHANNEL PROTOCOL:\n"
+            "Deliver your complete implementation directly in markdown code blocks for the user.\n"
+            "If downstream agents need specific data structures, API endpoints, or parameters, append: <agent_handover>{\"key\": \"val\"}</agent_handover> at the end.\n"
             f"Negative Knowledge Avoidance Rules to obey:\n{chr(10).join(avoidance_rules)}"
         )
         user_msg = (
             f"Task: {task.title}\n"
             f"Description: {task.description}\n"
-            f"Objective: {objective}{attached_files_text}\n\n"
+            f"Objective: {objective}{attached_files_text}{prior_context}\n\n"
             "Deliver the complete, standalone code implementation directly in markdown code blocks."
         )
 
@@ -429,7 +457,8 @@ if __name__ == "__main__":
         )
 
     # 2. SUMMARIZER SPECIALIST: Gemini 2.0 Flash (Gemini -> Groq -> OpenRouter -> Dynamic Synthesizer)
-    async def _run_gemini_summarizer(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
+    async def _run_gemini_summarizer(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None) -> WorkerResult:
+        prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
         is_secrecy = any(w in objective.lower() for w in [
             "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
             "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
@@ -442,16 +471,21 @@ if __name__ == "__main__":
                 "- The user requested a riddle, puzzle, or guessing game where the answer must NOT be revealed in the chat or text.\n"
                 "- You MUST NOT write, state, or hint at the answer in your visible output text under any circumstances!\n"
                 "- NEVER write notes like '(For the requested image, please produce a picture of X)' or 'Answer: X' in your visible text.\n"
-                "- If a downstream step (like an image generator) needs to know what secret object you selected, pass it ONLY at the very end in a hidden tag: <secret_answer>object_name</secret_answer>.\n"
+                "- Pass the chosen secret object inside <agent_handover>{\"target_subject\": \"object_name\", \"secret_answer\": \"object_name\"}</agent_handover> at the very end.\n"
                 "- The rest of your deliverable must contain strictly the riddle, clues, and pointers, keeping the user in full suspense!"
             )
 
         prompt_text = (
-            f"You are the Gemini Summarizer Specialist for OmniTask AI.\n"
+            f"You are the Gemini Summarizer & Creative Specialist for OmniTask AI.\n"
             f"Task: {task.title}\nObjective: {objective}\n"
-            f"Prior Outputs from other agents:\n{str(prior_outputs)[:2500]}\n"
+            f"{prior_context}\n"
             f"{attached_files_text}{secrecy_rule}\n\n"
-            f"Thoroughly analyze all inputs (including attached documents/notes) and produce the comprehensive deliverable fulfilling the task."
+            "MULTI-AGENT COLLABORATION DIRECTIVE:\n"
+            "Build directly upon verified deliverables and handovers established on the Common Context Blackboard above.\n"
+            "COLLABORATIVE DUAL-CHANNEL PROTOCOL:\n"
+            "1. Deliver your clean, polished deliverable for the user without conversational meta-notes to other agents.\n"
+            "2. If downstream specialist agents (e.g. image generator, code builder) require parameters or chosen entities, append: <agent_handover>{\"target_subject\": \"...\"}</agent_handover> at the end.\n\n"
+            "Thoroughly analyze all inputs and produce the comprehensive deliverable fulfilling the task."
         )
 
         # 1. Try Gemini
@@ -535,9 +569,16 @@ if __name__ == "__main__":
         )
 
     # 3. LOGIC & MATH SPECIALIST: Mistral (OpenRouter -> Gemini -> Groq -> Dynamic Derivation)
-    async def _run_mistral_logic(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
-        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{attached_files_text}"
-        sys_msg = "You are the Mistral Legal & Formal Logic Specialist for OmniTask AI. Evaluate regulatory constraints, deductive validity, and mathematical derivations. If attached files are present, analyze them directly."
+    async def _run_mistral_logic(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None) -> WorkerResult:
+        prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
+        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{attached_files_text}{prior_context}"
+        sys_msg = (
+            "You are the Mistral Legal & Formal Logic Specialist for OmniTask AI. Evaluate regulatory constraints, deductive validity, and mathematical derivations.\n"
+            "MULTI-AGENT CONTINUITY DIRECTIVE:\n"
+            "Build directly upon verified deliverables and handovers established on the Common Context Blackboard above.\n"
+            "COLLABORATIVE DUAL-CHANNEL PROTOCOL:\n"
+            "Deliver your complete formal derivations and logic to the user in clean markdown. Append <agent_handover>{\"key\": \"val\"}</agent_handover> only if downstream agents require structured parameters."
+        )
 
         # 1. Try OpenRouter (Mistral)
         if self.openrouter_key:
@@ -614,7 +655,8 @@ if __name__ == "__main__":
         )
 
     # 4. AUDITOR & EXAM/DOCUMENT SPECIALIST: OpenAI GPT (OpenRouter -> Gemini -> Groq -> Dynamic Auditor)
-    async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
+    async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None) -> WorkerResult:
+        prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
         is_secrecy = any(w in objective.lower() for w in [
             "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
             "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
@@ -627,20 +669,25 @@ if __name__ == "__main__":
                 "- The user requested a riddle, puzzle, or guessing game where the answer must NOT be revealed in the chat or text.\n"
                 "- You MUST NOT write, state, or hint at the answer in your visible output text under any circumstances!\n"
                 "- NEVER write notes like '(For the requested image, please produce a picture of X)' or 'Answer: X' in your visible text.\n"
-                "- If a downstream step (like an image generator) needs to know what secret object you selected, pass it ONLY at the very end in a hidden tag: <secret_answer>object_name</secret_answer>.\n"
+                "- Pass the chosen secret object inside <agent_handover>{\"target_subject\": \"object_name\", \"secret_answer\": \"object_name\"}</agent_handover> at the very end.\n"
                 "- The rest of your deliverable must contain strictly the riddle, clues, and pointers, keeping the user in full suspense!"
             )
 
         system_content = (
             "You are the OpenAI GPT Specialist for OmniTask AI.\n"
             "Fulfill the user's task with rigor and high fidelity.\n"
+            "MULTI-AGENT CONTINUITY DIRECTIVE:\n"
+            "Build directly upon verified deliverables and handovers established on the Common Context Blackboard above.\n"
+            "COLLABORATIVE DUAL-CHANNEL PROTOCOL:\n"
+            "Deliver your complete deliverable for the user without conversational meta-notes to other agents.\n"
+            "If downstream agents require parameters or target objects, append: <agent_handover>{\"target_subject\": \"...\"}</agent_handover> at the end.\n"
             "IMPORTANT NOTE ON ATTACHMENTS: If attached reference materials, notes, or PDFs are provided below, "
             "their full text has been extracted and provided directly to you. You MUST read and analyze them thoroughly, "
             "directly cite/use concepts from the notes, and produce the requested deliverables (e.g. top questions with answers, "
             "audits, summaries, or analyses). Do NOT say you cannot access files or attachments."
             f"{secrecy_rule}"
         )
-        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}\nCumulative Prior Outputs:\n{str(prior_outputs)[:2500]}{attached_files_text}"
+        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}\n{prior_context}{attached_files_text}"
 
         # 1. Try OpenRouter (GPT-4o-mini)
         if self.openrouter_key:
@@ -754,9 +801,18 @@ if __name__ == "__main__":
             success=True
         )
 
-    async def _resolve_visual_subject(self, task, objective: str, prior_outputs: Dict[str, Any]) -> str:
+    async def _resolve_visual_subject(self, task, objective: str, prior_outputs: Dict[str, Any], cumulative_handovers: Optional[Dict[str, Any]] = None) -> str:
         raw_text = task.description or objective
         subject = raw_text.strip()
+
+        # 0. Check cumulative_handovers from Blackboard first (0ms latency, zero ambiguity)
+        if cumulative_handovers:
+            for prev_id, h_data in cumulative_handovers.items():
+                if isinstance(h_data, dict):
+                    if h_data.get("target_subject"):
+                        return str(h_data["target_subject"]).strip()
+                    if h_data.get("secret_answer"):
+                        return str(h_data["secret_answer"]).strip()
 
         # 1. Check if any prior output explicitly saved a secret_answer or visual_subject artifact
         for prev_id, prev_data in prior_outputs.items():
@@ -871,13 +927,13 @@ if __name__ == "__main__":
         return None
 
     # 5. VISUAL ASSET SPECIALIST: Flux.1 (Live Synthesis & Dynamic Subject Fallback)
-    async def _run_flux_visual(self, task, objective, prior_outputs, avoidance_rules) -> WorkerResult:
+    async def _run_flux_visual(self, task, objective, prior_outputs, avoidance_rules, cumulative_handovers=None) -> WorkerResult:
         from pathlib import Path
         import uuid
 
         raw_text = task.description or objective
         # Intelligently resolve the exact physical subject from task, objective, and prior outputs
-        subject = await self._resolve_visual_subject(task, objective, prior_outputs)
+        subject = await self._resolve_visual_subject(task, objective, prior_outputs, cumulative_handovers)
 
         # Detect aspect ratio preferences
         sub_lower = f"{raw_text} {objective}".lower()
