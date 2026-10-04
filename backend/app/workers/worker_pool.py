@@ -73,6 +73,35 @@ class WorkerPool:
         result.step_id = step_id
         result.domain = domain
 
+        # Post-execution secrecy sanitization:
+        # Strip answer spoilers and internal image generator directives from visible output
+        is_secrecy_requested = any(w in objective.lower() for w in [
+            "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
+            "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
+            "riddle", "guess", "spoiler", "secret"
+        ])
+
+        if is_secrecy_requested and result.output_text and result.domain in [DomainType.AUDIT, "summary", DomainType.CODE]:
+            # 1. Extract <secret_answer>...</secret_answer>
+            secret_match = re.search(r"<secret_answer>\s*(.*?)\s*</secret_answer>", result.output_text, flags=re.IGNORECASE)
+            if secret_match:
+                result.artifacts["secret_answer"] = secret_match.group(1).strip()
+                result.output_text = re.sub(r"<secret_answer>.*?</secret_answer>", "", result.output_text, flags=re.IGNORECASE).strip()
+
+            # 2. Extract and strip parenthetical directives (e.g. "(For the requested image of the object, please produce a picture of a pen.)")
+            leak_pattern = r"\n*\([^\n)]*(?:requested image|produce a picture|picture of a|image of a|image of the object)[^\n)]*\)\s*$"
+            leak_match = re.search(leak_pattern, result.output_text, flags=re.IGNORECASE)
+            if leak_match:
+                if not result.artifacts.get("secret_answer"):
+                    obj_match = re.search(r"(?:picture of a|picture of an|picture of|produce a|produce an|image of a|image of an)\s+([a-zA-Z0-9\s_-]+?)(?:\.|\)|$)", leak_match.group(0), flags=re.IGNORECASE)
+                    if obj_match:
+                        clean_obj = obj_match.group(1).strip().rstrip(".)")
+                        if clean_obj:
+                            result.artifacts["secret_answer"] = clean_obj
+                result.output_text = re.sub(leak_pattern, "", result.output_text, flags=re.IGNORECASE).strip()
+
+            result.output_text = re.sub(r"\n*\(For the requested image[\s\S]*?\)\s*$", "", result.output_text, flags=re.IGNORECASE).strip()
+
         return result
 
     # 1. CODING SPECIALIST: Qwen 2.5 Coder (Groq -> Gemini -> OpenRouter -> Dynamic Generator)
@@ -401,11 +430,27 @@ if __name__ == "__main__":
 
     # 2. SUMMARIZER SPECIALIST: Gemini 2.0 Flash (Gemini -> Groq -> OpenRouter -> Dynamic Synthesizer)
     async def _run_gemini_summarizer(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
+        is_secrecy = any(w in objective.lower() for w in [
+            "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
+            "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
+            "riddle", "guess", "spoiler", "secret"
+        ])
+        secrecy_rule = ""
+        if is_secrecy:
+            secrecy_rule = (
+                "\n\nCRITICAL RULE FOR RIDDLES / GUESSING GAMES:\n"
+                "- The user requested a riddle, puzzle, or guessing game where the answer must NOT be revealed in the chat or text.\n"
+                "- You MUST NOT write, state, or hint at the answer in your visible output text under any circumstances!\n"
+                "- NEVER write notes like '(For the requested image, please produce a picture of X)' or 'Answer: X' in your visible text.\n"
+                "- If a downstream step (like an image generator) needs to know what secret object you selected, pass it ONLY at the very end in a hidden tag: <secret_answer>object_name</secret_answer>.\n"
+                "- The rest of your deliverable must contain strictly the riddle, clues, and pointers, keeping the user in full suspense!"
+            )
+
         prompt_text = (
             f"You are the Gemini Summarizer Specialist for OmniTask AI.\n"
             f"Task: {task.title}\nObjective: {objective}\n"
             f"Prior Outputs from other agents:\n{str(prior_outputs)[:2500]}\n"
-            f"{attached_files_text}\n\n"
+            f"{attached_files_text}{secrecy_rule}\n\n"
             f"Thoroughly analyze all inputs (including attached documents/notes) and produce the comprehensive deliverable fulfilling the task."
         )
 
@@ -570,6 +615,22 @@ if __name__ == "__main__":
 
     # 4. AUDITOR & EXAM/DOCUMENT SPECIALIST: OpenAI GPT (OpenRouter -> Gemini -> Groq -> Dynamic Auditor)
     async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="") -> WorkerResult:
+        is_secrecy = any(w in objective.lower() for w in [
+            "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
+            "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
+            "riddle", "guess", "spoiler", "secret"
+        ])
+        secrecy_rule = ""
+        if is_secrecy:
+            secrecy_rule = (
+                "\n\nCRITICAL RULE FOR RIDDLES / GUESSING GAMES:\n"
+                "- The user requested a riddle, puzzle, or guessing game where the answer must NOT be revealed in the chat or text.\n"
+                "- You MUST NOT write, state, or hint at the answer in your visible output text under any circumstances!\n"
+                "- NEVER write notes like '(For the requested image, please produce a picture of X)' or 'Answer: X' in your visible text.\n"
+                "- If a downstream step (like an image generator) needs to know what secret object you selected, pass it ONLY at the very end in a hidden tag: <secret_answer>object_name</secret_answer>.\n"
+                "- The rest of your deliverable must contain strictly the riddle, clues, and pointers, keeping the user in full suspense!"
+            )
+
         system_content = (
             "You are the OpenAI GPT Specialist for OmniTask AI.\n"
             "Fulfill the user's task with rigor and high fidelity.\n"
@@ -577,6 +638,7 @@ if __name__ == "__main__":
             "their full text has been extracted and provided directly to you. You MUST read and analyze them thoroughly, "
             "directly cite/use concepts from the notes, and produce the requested deliverables (e.g. top questions with answers, "
             "audits, summaries, or analyses). Do NOT say you cannot access files or attachments."
+            f"{secrecy_rule}"
         )
         user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}\nCumulative Prior Outputs:\n{str(prior_outputs)[:2500]}{attached_files_text}"
 
@@ -692,18 +754,44 @@ if __name__ == "__main__":
             success=True
         )
 
-    # 5. VISUAL ASSET SPECIALIST: Flux.1 (Live Synthesis & Dynamic Subject Fallback)
-    async def _run_flux_visual(self, task, objective, prior_outputs, avoidance_rules) -> WorkerResult:
-        from pathlib import Path
-        import uuid
-
+    async def _resolve_visual_subject(self, task, objective: str, prior_outputs: Dict[str, Any]) -> str:
         raw_text = task.description or objective
         subject = raw_text.strip()
 
-        # Strip compound task clauses (e.g. "and write a poem on it", "and compose a poem", "and code a script")
+        # 1. Check if any prior output explicitly saved a secret_answer or visual_subject artifact
+        for prev_id, prev_data in prior_outputs.items():
+            artifacts = prev_data.get("artifacts", {})
+            if artifacts.get("secret_answer"):
+                return str(artifacts["secret_answer"]).strip()
+            if artifacts.get("visual_subject"):
+                return str(artifacts["visual_subject"]).strip()
+
+        # 2. Check for regex patterns in prior outputs (e.g. <secret_answer>pen</secret_answer>, "produce a picture of a pen")
+        for prev_id, prev_data in prior_outputs.items():
+            full_text = prev_data.get("full_output", "")
+            m_tag = re.search(r"<secret_answer>\s*(.*?)\s*</secret_answer>", full_text, flags=re.IGNORECASE)
+            if m_tag:
+                return m_tag.group(1).strip()
+            m_note = re.search(r"(?:produce|make|generate)\s+(?:a|an)?\s*(?:picture|image|photo)\s+of\s+(?:a\s+|an\s+)?([a-zA-Z0-9\s_-]+?)(?:\.|\))", full_text, flags=re.IGNORECASE)
+            if m_note:
+                ans = m_note.group(1).strip().rstrip(".)")
+                if ans and len(ans) > 1 and len(ans) < 50:
+                    return ans
+
+        # 3. If task description or title refers to a prior step, riddle, secret object, or solution:
+        is_dependent = any(w in raw_text.lower() or w in task.title.lower() for w in [
+            "secret object", "chosen object", "riddle answer", "visual solution", "answer object",
+            "the object", "from step_", "prior step", "solution", "riddle"
+        ])
+
+        if is_dependent and prior_outputs:
+            extracted = await self._llm_extract_visual_subject(task, objective, prior_outputs)
+            if extracted:
+                return extracted
+
+        # 4. Standard subject cleanup (strip conversational phrases)
         subject = re.sub(r"\s+and\s+(write|compose|generate|create|render)\s+(a\s+)?(poem|poetry|story|lyrics|song|code|script|api|function|text|essay).*$", "", subject, flags=re.IGNORECASE).strip()
 
-        # Strip conversational and meta-instruction artifacts
         strip_patterns = [
             r"^(take\s+the\s+detailed\s+visual\s+prompt\s+from\s+step_\d+\s+and\s+utilize\s+the\s+image\s+generation\s+engine\s+to\s+render\s+(the\s+final\s+visual\s+asset\s+of\s+)?)",
             r"^(can\s+you\s+)?(please\s+)?(make|generate|create|render|draw|show|produce)\s+(an?\s+)?(image|picture|photo|graphic|illustration)\s+(of\s+)?",
@@ -716,8 +804,80 @@ if __name__ == "__main__":
         for pat in strip_patterns:
             subject = re.sub(pat, "", subject, flags=re.IGNORECASE).strip()
 
-        if not subject or len(subject) < 3:
+        if not subject or len(subject) < 3 or any(w in subject.lower() for w in ["the secret object", "secret object", "riddle answer", "visual solution"]):
+            if prior_outputs:
+                extracted = await self._llm_extract_visual_subject(task, objective, prior_outputs)
+                if extracted:
+                    return extracted
             subject = objective.strip()
+
+        return subject
+
+    async def _llm_extract_visual_subject(self, task, objective: str, prior_outputs: Dict[str, Any]) -> Optional[str]:
+        prior_texts = []
+        for pid, pdata in prior_outputs.items():
+            prior_texts.append(f"[{pid}]: {pdata.get('full_output', '')[:2000]}")
+        context_str = "\n".join(prior_texts)
+
+        prompt = (
+            "You are the Visual Target Resolver for OmniTask AI.\n"
+            f"User Goal: {objective}\n"
+            f"Current Image Task: {task.title} - {task.description}\n"
+            f"Preceding Step Outputs:\n{context_str}\n\n"
+            "Task: Identify the exact concrete physical object, item, character, or scene that needs to be generated as an image.\n"
+            "For example, if the previous step wrote a riddle about a pen, output 'a classic fountain pen'.\n"
+            "If it wrote a riddle about a clock, output 'an ornate vintage clock'.\n"
+            "Return ONLY the concise visual subject/scene (2 to 8 words) suitable for an image generator prompt. Do NOT include explanations, quotes, or markdown."
+        )
+
+        if self.gemini_key:
+            try:
+                async with httpx.AsyncClient(timeout=6.0) as client:
+                    resp = await client.post(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={self.gemini_key}",
+                        json={"contents": [{"parts": [{"text": prompt}]}]}
+                    )
+                    if resp.status_code == 200:
+                        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        clean = re.sub(r'["\']', '', text).strip()
+                        if clean and len(clean) > 2 and len(clean) < 100:
+                            return clean
+            except Exception as e:
+                print(f"[Visual Subject Resolver] Gemini error: {e}")
+
+        if self.groq_key:
+            try:
+                async with httpx.AsyncClient(timeout=6.0) as client:
+                    resp = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.groq_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": "openai/gpt-oss-120b",
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": 0.1
+                        }
+                    )
+                    if resp.status_code == 200:
+                        text = resp.json()["choices"][0]["message"]["content"].strip()
+                        clean = re.sub(r'["\']', '', text).strip()
+                        if clean and len(clean) > 2 and len(clean) < 100:
+                            return clean
+            except Exception as e:
+                print(f"[Visual Subject Resolver] Groq error: {e}")
+
+        return None
+
+    # 5. VISUAL ASSET SPECIALIST: Flux.1 (Live Synthesis & Dynamic Subject Fallback)
+    async def _run_flux_visual(self, task, objective, prior_outputs, avoidance_rules) -> WorkerResult:
+        from pathlib import Path
+        import uuid
+
+        raw_text = task.description or objective
+        # Intelligently resolve the exact physical subject from task, objective, and prior outputs
+        subject = await self._resolve_visual_subject(task, objective, prior_outputs)
 
         # Detect aspect ratio preferences
         sub_lower = f"{raw_text} {objective}".lower()
@@ -735,6 +895,8 @@ if __name__ == "__main__":
         is_diagram = any(w in subject.lower() for w in ["diagram", "chart", "infographic", "architecture", "flowchart", "schematic", "blueprint"])
         if is_diagram:
             clean_prompt = f"Professional clean technical infographic diagram of {subject}, modern typography, crisp minimalist vector detailing"
+        elif len(subject.split()) <= 2:
+            clean_prompt = f"a high-quality studio photograph of a {subject}, cinematic lighting, sharp focus, beautiful depth of field, 8k resolution"
         else:
             clean_prompt = f"{subject}, cinematic photorealism, beautiful lighting, sharp focus, aesthetic composition, 8k resolution"
 
@@ -808,17 +970,36 @@ if __name__ == "__main__":
         # Local relative URL served by FastAPI on localhost:8001
         local_image_url = f"/api/generated-images/{img_id}.jpg"
 
-        visual_output = (
-            f"### Visual Asset & Creative Render\n"
-            f"*Rendered by Flux.1 Visual Specialist*\n\n"
-            f"**Subject**: {subject}\n\n"
-            f"![Generated Visual Asset]({local_image_url})\n\n"
-            f"- **Engine**: {engine_name}\n"
-            f"- **Prompt**: \"{clean_prompt}\"\n"
-            f"- **Aspect Ratio**: {aspect_ratio} ({width}x{height})\n"
-            f"- **Status**: {'Verified Online (200 OK)' if is_verified else 'Rendered'}\n"
-            f"- **Asset Direct Link**: [Download Full-Resolution Image]({local_image_url})\n"
-        )
+        is_secrecy = any(w in objective.lower() for w in [
+            "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
+            "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
+            "riddle", "guess", "spoiler", "secret"
+        ])
+
+        if is_secrecy:
+            visual_output = (
+                f"### Visual Asset & Creative Render\n"
+                f"*Rendered by Flux.1 Visual Specialist*\n\n"
+                f"**Visual Solution**: *[Secret Object Revealed in the Image Above]*\n\n"
+                f"![Generated Visual Asset]({local_image_url})\n\n"
+                f"- **Engine**: {engine_name}\n"
+                f"- **Aspect Ratio**: {aspect_ratio} ({width}x{height})\n"
+                f"- **Status**: {'Verified Online (200 OK)' if is_verified else 'Rendered'}\n"
+                f"- **Asset Direct Link**: [Download Full-Resolution Image]({local_image_url})\n"
+            )
+        else:
+            visual_output = (
+                f"### Visual Asset & Creative Render\n"
+                f"*Rendered by Flux.1 Visual Specialist*\n\n"
+                f"**Subject**: {subject.capitalize()}\n\n"
+                f"![Generated Visual Asset]({local_image_url})\n\n"
+                f"- **Engine**: {engine_name}\n"
+                f"- **Prompt**: \"{clean_prompt}\"\n"
+                f"- **Aspect Ratio**: {aspect_ratio} ({width}x{height})\n"
+                f"- **Status**: {'Verified Online (200 OK)' if is_verified else 'Rendered'}\n"
+                f"- **Asset Direct Link**: [Download Full-Resolution Image]({local_image_url})\n"
+            )
+
         return WorkerResult(
             step_id=task.step_id,
             worker_model="Flux.1 (Visual Asset Specialist)",
@@ -831,7 +1012,8 @@ if __name__ == "__main__":
                 "is_verified": is_verified,
                 "bytes_len": image_bytes_len,
                 "aspect_ratio": aspect_ratio,
-                "model": "Flux.1"
+                "model": "Flux.1",
+                "resolved_subject": subject
             },
             success=True
         )

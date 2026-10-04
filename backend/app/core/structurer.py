@@ -86,6 +86,9 @@ class JSONStructurerAgent:
             "  * For compound requests like 'make an image of X and write a poem on it':\n"
             "    - step_1: Visual Asset Generation for X (domain: 'vision', Worker: 'Flux.1 (Visual Asset Specialist)')\n"
             "    - step_2: Compose Evocative Poem for X (domain: 'audit', Worker: 'Gemini 2.0 Flash (Summarizer Specialist)', expected_output_type: 'poem_markdown')\n"
+            "  * For riddle or guessing game requests where the answer should be an image without revealing the answer in text:\n"
+            "    - step_1: Compose Object Riddle and Pointers (domain: 'audit', Worker: 'OpenAI GPT (Auditing Specialist)', description: 'Write an engaging riddle and pointers for a chosen secret object without revealing the answer in text.')\n"
+            "    - step_2: Render Visual Solution Asset for Riddle Answer (domain: 'vision', Worker: 'Flux.1 (Visual Asset Specialist)', required_prerequisites: ['step_1'], description: 'Render high-quality image of the secret object chosen in step_1.')\n"
             "  * Only split into 2 to 4 sub-tasks when the user objective genuinely requires multiple distinct disciplines (e.g. 'image + poem', 'code + technical diagram', 'study notes analysis + quiz creation').\n\n"
             "Each sub-task must have:\n"
             "- step_id: e.g. 'step_1', 'step_2'\n"
@@ -243,6 +246,35 @@ class JSONStructurerAgent:
         p_lower = prompt.lower()
         subtasks: List[StructuredSubTask] = []
         step_idx = 1
+
+        # Check for Riddle / Guessing Game with Visual Output
+        has_riddle = any(w in p_lower for w in ["riddle", "guess", "puzzle", "pointers and we have to guess", "thinking of an image"])
+        wants_image = any(w in p_lower for w in ["image", "picture", "photo", "render", "draw"])
+        if has_riddle and wants_image:
+            subtasks.append(StructuredSubTask(
+                step_id=f"step_{step_idx}",
+                title="Compose Object Riddle and Pointers",
+                domain=DomainType.AUDIT,
+                description=f"Compose an engaging riddle and 5 clue pointers for a chosen secret object without revealing the answer in text: {prompt}",
+                assigned_worker_model="OpenAI GPT (Auditing Specialist)",
+                assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                required_prerequisites=["Initial riddle constraints"],
+                expected_output_type="riddle_markdown",
+                status=TaskStatus.PENDING
+            ))
+            step_idx += 1
+            subtasks.append(StructuredSubTask(
+                step_id=f"step_{step_idx}",
+                title="Render Visual Asset of Riddle Answer",
+                domain=DomainType.VISION,
+                description="Render a high-quality visual asset of the secret answer object chosen in step_1.",
+                assigned_worker_model="Flux.1 (Visual Asset Specialist)",
+                assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                required_prerequisites=[f"step_{step_idx-1}"],
+                expected_output_type="rendered_image_url",
+                status=TaskStatus.PENDING
+            ))
+            step_idx += 1
 
         # Check for Math / Calculation / Financial
         has_math = any(w in p_lower for w in ["math", "calculate", "equation", "formula", "regression", "statistics", "numerical", "finance", "revenue", "roi", "data analysis", "cost"])
