@@ -176,10 +176,10 @@ export const SampleNavModal: React.FC<SampleNavModalProps> = ({
                 <div className="p-3.5 rounded-xl bg-[#030303] border border-white/[0.06] flex items-center justify-between">
                   <div>
                     <h5 className="font-semibold text-white">GitHub Repository</h5>
-                    <p className="text-[11px] text-neutral-400 font-mono">yatharthsachdeva23/Omni-Agent</p>
+                    <p className="text-[11px] text-neutral-400 font-mono">yatharthsachdeva23/OmniTask-AI</p>
                   </div>
                   <a
-                    href="https://github.com/yatharthsachdeva23/Omni-Agent"
+                    href="https://github.com/yatharthsachdeva23/OmniTask-AI"
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-white text-xs transition"

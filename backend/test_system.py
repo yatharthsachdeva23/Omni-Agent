@@ -26,7 +26,7 @@ def test_system():
     print("\nTesting Frontend HTML Delivery at / ...")
     res = client.get("/")
     assert res.status_code == 200
-    assert "Omni Agent" in res.text
+    assert "OmniTask AI" in res.text
     print("Frontend HTML rendered successfully!")
 
     print("\nALL SYSTEM TESTS PASSED PERFECTLY!")

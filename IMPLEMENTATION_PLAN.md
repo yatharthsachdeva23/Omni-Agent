@@ -1,7 +1,7 @@
-# Omni Agent: Master Implementation Plan
+# OmniTask AI: Master Implementation Plan
 
 > [!NOTE]
-> This plan details the phased technical execution to build **Omni Agent** from scratch. It is designed to be modular, robust, and verifiable at every stage.
+> This plan details the phased technical execution to build **OmniTask AI** from scratch. It is designed to be modular, robust, and verifiable at every stage.
 
 ---
 
@@ -15,7 +15,7 @@ flowchart LR
         UI3["Live Agent Graph & Blackboard Visualizer"]
     end
 
-    subgraph CoreEngine["Omni Agent Core Engine"]
+    subgraph CoreEngine["OmniTask AI Core Engine"]
         Ingest["Data & File Ingestion"]
         Struct["JSON Structurer Agent"]
         Jev["Jev Fast Router (System 1)"]

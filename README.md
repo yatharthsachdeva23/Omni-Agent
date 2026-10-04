@@ -84,8 +84,8 @@
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/yatharthsachdeva23/Omni-Agent.git
-cd Omni-Agent
+git clone https://github.com/yatharthsachdeva23/OmniTask-AI.git
+cd OmniTask-AI
 ```
 
 ### 2. Setup Python 3.12 Virtual Environment
@@ -117,9 +117,9 @@ Copy the example environment file:
 cp backend/.env.example backend/.env
 ```
 Add your API keys to `backend/.env` for live API calls.  
-*(Note: If keys are omitted, Omni Agent automatically runs smart high-fidelity simulation so you can explore the full UI and agent graph immediately without required billing).*
-
-### 5. Launch Omni Agent
+*(Note: If keys are omitted, OmniTask AI automatically runs smart high-fidelity simulation so you can explore the full UI and agent graph immediately without required billing).*
+ 
+### 5. Launch OmniTask AI
 ```bash
 python run.py
 ```
@@ -148,7 +148,7 @@ python backend/test_system.py
 ## 📁 Repository Structure
 
 ```
-Omni-Agent/
+OmniTask-AI/
 ├── backend/
 │   ├── app/
 │   │   ├── advisor/              # Track 1: Tool matrix & recommendation engine
@@ -179,7 +179,7 @@ Omni-Agent/
 │   └── vite.config.ts
 ├── .gitignore                    # Watertight git rules
 ├── IMPLEMENTATION_PLAN.md        # Technical execution roadmap
-├── OMNI_AGENT_CONCEPT.md         # Conceptual specification blueprint
+├── OMNITASK_AI_CONCEPT.md        # Conceptual specification blueprint
 ├── README.md                     # Project documentation
 └── run.py                        # Single-command launcher
 ```

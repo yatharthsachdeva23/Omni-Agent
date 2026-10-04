@@ -5,7 +5,7 @@ from app.orchestrator import OmniOrchestrator
 
 async def run_test():
     print("==================================================")
-    print("STARTING OMNI AGENT END-TO-END PIPELINE TEST")
+    print("STARTING OMNITASK AI END-TO-END PIPELINE TEST")
     print("==================================================")
 
     orchestrator = OmniOrchestrator()

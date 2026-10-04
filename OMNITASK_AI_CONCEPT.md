@@ -1,16 +1,16 @@
-# Omni Agent: Architectural Blueprint & Conceptual Specification
+# OmniTask AI: Architectural Blueprint & Conceptual Specification
 
 ---
 
 ## 1. Executive Summary & Vision
 
-**Omni Agent** is an all-in-one, intelligent multi-agent orchestration ecosystem designed to solve complex, multi-faceted tasks that modern single-model AIs (such as vanilla ChatGPT or Gemini) cannot accomplish on their own.
+**OmniTask AI** is an all-in-one, intelligent multi-agent orchestration ecosystem designed to solve complex, multi-faceted tasks that modern single-model AIs (such as vanilla ChatGPT or Gemini) cannot accomplish on their own.
 
 Today's landscape suffers from two major problems:
 1. **User Overwhelm & Knowledge Gap**: There are hundreds of specialized AI agents, models, and tools available (coding specialists, math engines, image generators, video creators, auditors, summarizers). Normal users do not know which model is best suited for their specific sub-problem, nor do they know how to build multi-agent workflows.
 2. **Single-Agent Limitations**: High-complexity projects require multi-domain expertise, intermediate validation, state persistence, and cross-model handoffs. A single model invariably loses context, hallucinates, or underperforms in specialized domains.
 
-Omni Agent solves this by serving as the universal portal: users submit complex goals in plain natural language, along with any necessary data/files. Omni Agent structures the objective, deploys an ultra-fast System 1 decision engine (**Jev**) to build an optimal execution graph, passes the work through specialized best-in-class workers with intermediate quality reviewers, maintains a single **Common Context Ledger** across all agents, and performs a final evaluation before delivering the result to the user.
+OmniTask AI solves this by serving as the universal portal: users submit complex goals in plain natural language, along with any necessary data/files. OmniTask AI structures the objective, deploys an ultra-fast System 1 decision engine (**Jev**) to build an optimal execution graph, passes the work through specialized best-in-class workers with intermediate quality reviewers, maintains a single **Common Context Ledger** across all agents, and performs a final evaluation before delivering the result to the user.
 
 ---
 
@@ -22,13 +22,13 @@ Omni Agent solves this by serving as the universal portal: users submit complex 
   * User describes their complex goal or problem in natural language.
   * The system decomposes the problem into required capabilities.
   * System recommends the exact combination of AI models, agents, and tools best suited for each stage (e.g., *"Use Tool A for data extraction, Model B for mathematical optimization, and Agent C for visual asset creation"*).
-  * The user receives this actionable blueprint to execute on their own without Omni Agent running the compute.
+  * The user receives this actionable blueprint to execute on their own without OmniTask AI running the compute.
 
 ### Track 2: Paid Tier — The Autonomous Omni Execution Engine
 * **Target Audience**: Power users, professionals, and enterprises who want end-to-end automated execution.
 * **Functionality**:
   * User inputs the natural language request and ingests data/files (documents, datasets, images, specifications).
-  * Omni Agent executes the entire workflow autonomously from structuring, routing, execution, intermediate quality checks, cumulative context logging, to final scoring and delivery.
+  * OmniTask AI executes the entire workflow autonomously from structuring, routing, execution, intermediate quality checks, cumulative context logging, to final scoring and delivery.
 
 ---
 
@@ -111,8 +111,8 @@ Omni Agent solves this by serving as the universal portal: users submit complex 
 * **What is Jev?**:
   * Jev is a high-speed "System One" decision model (developed by TypeSafe AI). Unlike traditional autoregressive LLMs that spend seconds generating prose tokens, Jev is built specifically for deterministic, low-latency (70–500ms), structured decisions and classification.
   * It accepts typed states and questions, returning exact categorical choices, priorities, and confidence scores without output token overhead.
-* **Role in Omni Agent**:
-  * Jev acts as the **cerebellum / traffic controller** of Omni Agent.
+* **Role in OmniTask AI**:
+  * Jev acts as the **cerebellum / traffic controller** of OmniTask AI.
   * It evaluates the structured JSON state and computes:
     1. The decomposition of the task into ordered/parallel sub-tasks (a Directed Acyclic Graph - DAG).
     2. Model-to-Task routing: assigns each sub-task to the best-in-class AI model or software (e.g., Code Specialist for Python logic, Math Engine for formal proofs, Diffusion/Multimodal model for asset generation).
@@ -120,7 +120,7 @@ Omni Agent solves this by serving as the universal portal: users submit complex 
 
 ### C. The Common Context Window & Shared Blackboard Memory
 * **The Core Problem**: In traditional multi-agent systems, agents operate either in isolated silos (amnesia, repeating work, hallucinating baseline facts) or with naive prompt stuffing (context window overflow, losing needle-in-a-haystack instructions).
-* **The Omni Agent Shared Memory Solution**:
+* **The OmniTask AI Shared Memory Solution**:
   * A centralized, living **Common Context Ledger** shared across all agents in the loop.
   * **Continuous Context Updates (Delta Logging)**:
     * When Sub-Agent $N$ finishes a task, its findings, key parameters, outputs, and any obstacles are appended to the ledger.
