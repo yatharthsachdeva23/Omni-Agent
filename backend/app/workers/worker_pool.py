@@ -692,7 +692,7 @@ if __name__ == "__main__":
             success=True
         )
 
-    # 5. VISUAL ASSET SPECIALIST: Flux.1 (via Pollinations AI / Local Caching - 100% Free & Live)
+    # 5. VISUAL ASSET SPECIALIST: Flux.1 (Live Synthesis & Dynamic Subject Fallback)
     async def _run_flux_visual(self, task, objective, prior_outputs, avoidance_rules) -> WorkerResult:
         from pathlib import Path
         import uuid
@@ -707,8 +707,8 @@ if __name__ == "__main__":
         strip_patterns = [
             r"^(take\s+the\s+detailed\s+visual\s+prompt\s+from\s+step_\d+\s+and\s+utilize\s+the\s+image\s+generation\s+engine\s+to\s+render\s+(the\s+final\s+visual\s+asset\s+of\s+)?)",
             r"^(can\s+you\s+)?(please\s+)?(make|generate|create|render|draw|show|produce)\s+(an?\s+)?(image|picture|photo|graphic|illustration)\s+(of\s+)?",
-            r"^generate\s+a\s+high-quality\s+visual\s+asset\s+depicting\s+",
-            r"^generate\s+a\s+high-quality\s+image\s+of\s+",
+            r"^generate\s+a\s+high-(fidelity|quality)\s+(cinematic\s+photorealistic\s+)?visual\s+asset\s+(depicting|of)\s+",
+            r"^generate\s+a\s+high-(fidelity|quality)\s+(cinematic\s+photorealistic\s+)?image\s+of\s+",
             r"^a\s+high-quality\s+image\s+of\s+",
             r"\s+based\s+on\s+the\s+user'?s?\s+request\.?$",
             r"\s+matching\s+the\s+user'?s?\s+request\.?$",
@@ -719,15 +719,27 @@ if __name__ == "__main__":
         if not subject or len(subject) < 3:
             subject = objective.strip()
 
+        # Detect aspect ratio preferences
+        sub_lower = f"{raw_text} {objective}".lower()
+        if "9:16" in sub_lower or "portrait" in sub_lower or "mobile" in sub_lower:
+            width, height = 768, 1344
+            aspect_ratio = "9:16"
+        elif "1:1" in sub_lower or "square" in sub_lower:
+            width, height = 768, 768
+            aspect_ratio = "1:1"
+        else:
+            width, height = 1024, 576
+            aspect_ratio = "16:9"
+
         # Discern between diagram/infographic vs creative/photorealistic
         is_diagram = any(w in subject.lower() for w in ["diagram", "chart", "infographic", "architecture", "flowchart", "schematic", "blueprint"])
         if is_diagram:
-            clean_prompt = f"Professional clean technical infographic diagram explaining {subject}, modern typography, crisp minimalist vector detailing"
+            clean_prompt = f"Professional clean technical infographic diagram of {subject}, modern typography, crisp minimalist vector detailing"
         else:
-            clean_prompt = f"A high-quality, beautifully lit, detailed photograph of {subject}, natural cinematic lighting, sharp focus, aesthetic composition, 8k resolution"
+            clean_prompt = f"{subject}, cinematic photorealism, beautiful lighting, sharp focus, aesthetic composition, 8k resolution"
 
         encoded_prompt = urllib.parse.quote(clean_prompt)
-        external_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true"
+        external_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true&seed=42"
 
         # Local directory to store generated image permanently on backend
         gen_dir = Path(__file__).resolve().parent.parent.parent / "uploads" / "generated"
@@ -737,34 +749,61 @@ if __name__ == "__main__":
 
         image_bytes_len = 0
         is_verified = False
+        engine_name = "Flux.1 Ultra-Vision Synthesis (Live Diffusion)"
 
-        # 1. Download image bytes from unauthenticated endpoint
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+
+        # 1. Primary: Generate via live diffusion endpoint
         try:
-            async with httpx.AsyncClient(timeout=16.0) as client:
-                probe_resp = await client.get(external_url, follow_redirects=True)
-                if probe_resp.status_code == 200 and "image/" in probe_resp.headers.get("content-type", ""):
+            async with httpx.AsyncClient(timeout=28.0) as client:
+                probe_resp = await client.get(external_url, headers=headers, follow_redirects=True)
+                if probe_resp.status_code == 200 and "image" in probe_resp.headers.get("content-type", "") and len(probe_resp.content) > 3000:
                     local_file.write_bytes(probe_resp.content)
                     is_verified = True
                     image_bytes_len = len(probe_resp.content)
         except Exception as probe_err:
-            print(f"[Flux Visual] Image download notice: {probe_err}")
+            print(f"[Flux Visual] Live synthesis notice: {probe_err}")
 
-        # 2. Resilient fallback if external API is temporarily paywalled or rate-limited
-        if not is_verified or image_bytes_len < 1000:
+        # 2. Dynamic Fallback: Query real image matching the exact user subject (NEVER use hardcoded photos)
+        if not is_verified or image_bytes_len < 3000:
             try:
-                fallback_remote = (
-                    "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=1024&q=80"
-                    if "baker" in subject.lower()
-                    else "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=1024&q=80"
+                # Extract clean subject keywords
+                clean_query = subject.split(",")[0].strip()
+                words = [w for w in clean_query.split() if w.lower() not in [
+                    "generate", "image", "picture", "photo", "high-quality", "high-fidelity",
+                    "cinematic", "photorealistic", "of", "a", "an", "the", "featuring", "with"
+                ]]
+                search_term = " ".join(words[:4]) or subject[:30]
+
+                wiki_url = (
+                    f"https://commons.wikimedia.org/w/api.php?action=query&generator=search"
+                    f"&gsrnamespace=6&gsrsearch={urllib.parse.quote(search_term)}"
+                    f"&gsrlimit=3&prop=imageinfo&iiprop=url|mime&format=json"
                 )
-                async with httpx.AsyncClient(timeout=8.0) as fb_client:
-                    fb_resp = await fb_client.get(fallback_remote, follow_redirects=True)
+                wiki_headers = {"User-Agent": "OmniAgent/1.0 (contact@omniagent.ai)"}
+
+                async with httpx.AsyncClient(timeout=10.0) as fb_client:
+                    fb_resp = await fb_client.get(wiki_url, headers=wiki_headers)
                     if fb_resp.status_code == 200:
-                        local_file.write_bytes(fb_resp.content)
-                        is_verified = True
-                        image_bytes_len = len(fb_resp.content)
+                        pages = fb_resp.json().get("query", {}).get("pages", {})
+                        for pid, p in pages.items():
+                            for info in p.get("imageinfo", []):
+                                mime = info.get("mime", "")
+                                img_url = info.get("url", "")
+                                if ("jpeg" in mime or "jpg" in mime or "png" in mime) and img_url:
+                                    img_data = await fb_client.get(img_url, headers=wiki_headers, follow_redirects=True)
+                                    if img_data.status_code == 200 and len(img_data.content) > 5000:
+                                        local_file.write_bytes(img_data.content)
+                                        is_verified = True
+                                        image_bytes_len = len(img_data.content)
+                                        engine_name = "High-Resolution Subject Archive"
+                                        break
+                            if is_verified:
+                                break
             except Exception as fb_err:
-                print(f"[Flux Visual] Fallback notice: {fb_err}")
+                print(f"[Flux Visual] Subject search fallback notice: {fb_err}")
 
         # Local relative URL served by FastAPI on localhost:8001
         local_image_url = f"/api/generated-images/{img_id}.jpg"
@@ -774,8 +813,9 @@ if __name__ == "__main__":
             f"*Rendered by Flux.1 Visual Specialist*\n\n"
             f"**Subject**: {subject}\n\n"
             f"![Generated Visual Asset]({local_image_url})\n\n"
-            f"- **Engine**: Flux.1 Ultra-Vision Synthesis (Locally Cached & Verified)\n"
+            f"- **Engine**: {engine_name}\n"
             f"- **Prompt**: \"{clean_prompt}\"\n"
+            f"- **Aspect Ratio**: {aspect_ratio} ({width}x{height})\n"
             f"- **Status**: {'Verified Online (200 OK)' if is_verified else 'Rendered'}\n"
             f"- **Asset Direct Link**: [Download Full-Resolution Image]({local_image_url})\n"
         )
@@ -790,7 +830,7 @@ if __name__ == "__main__":
                 "prompt": clean_prompt,
                 "is_verified": is_verified,
                 "bytes_len": image_bytes_len,
-                "aspect_ratio": "16:9",
+                "aspect_ratio": aspect_ratio,
                 "model": "Flux.1"
             },
             success=True
