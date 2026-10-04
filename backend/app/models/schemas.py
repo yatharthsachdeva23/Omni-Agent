@@ -34,6 +34,9 @@ class TaskRequest(BaseModel):
     files: List[IngestedFile] = Field(default_factory=list)
     mode: str = "paid"  # "paid" for Omni Execution, "free" for Advisor
     allow_simulation: bool = True
+    ask_before_doing: bool = True
+    user_clarifications: Optional[Dict[str, str]] = None
+    approved_plan_summary: Optional[str] = None
 
 class StructuredSubTask(BaseModel):
     step_id: str
@@ -115,3 +118,27 @@ class AdvisorResponse(BaseModel):
     task_decomposition: List[str]
     recommendations: List[ToolRecommendation]
     diy_execution_blueprint: List[Dict[str, Any]]
+
+# Interactive Planning Models (Ask Before Doing)
+class PlanClarifyingQuestion(BaseModel):
+    id: str
+    question: str
+    options: List[str] = Field(default_factory=list)
+    default_selected: Optional[str] = None
+    allow_custom: bool = True
+
+class ImplementationStepPlan(BaseModel):
+    step_number: int
+    title: str
+    domain: DomainType
+    assigned_worker: str
+    description: str
+    expected_output: str
+
+class InteractivePlanResponse(BaseModel):
+    objective_summary: str
+    architectural_approach: str
+    assumptions: List[str] = Field(default_factory=list)
+    steps: List[ImplementationStepPlan] = Field(default_factory=list)
+    clarifying_questions: List[PlanClarifyingQuestion] = Field(default_factory=list)
+    suggested_focus: str = ""

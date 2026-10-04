@@ -30,15 +30,35 @@ class OmniOrchestrator:
     async def execute_stream(self, request: TaskRequest) -> AsyncGenerator[str, None]:
         session_id = f"omni_{uuid.uuid4().hex[:8]}"
 
+        # Construct effective prompt including user-approved plan and clarifications
+        effective_prompt = request.prompt
+        clarifications_list = []
+        if request.user_clarifications:
+            for q, a in request.user_clarifications.items():
+                if a and a.strip():
+                    clarifications_list.append(f"{q}: {a.strip()}")
+        
+        if clarifications_list:
+            effective_prompt += "\n\n[USER APPROVED CLARIFICATIONS & SPECIFICATIONS]:\n" + "\n".join([f"- {c}" for c in clarifications_list])
+
+        if request.approved_plan_summary:
+            effective_prompt += f"\n\n[USER APPROVED ARCHITECTURE PLAN]:\n{request.approved_plan_summary}"
+
         # --- STEP 1: PARSING & STRUCTURING ---
         yield self._format_sse("STAGE_CHANGE", {
             "stage": "STRUCTURING",
-            "message": "JSON Structurer Agent normalizing prompt and ingested assets...",
+            "message": "JSON Structurer Agent normalizing prompt, preferences, and ingested assets...",
             "session_id": session_id
         })
         await asyncio.sleep(0.4)
 
-        structured_goal = await self.structurer.structure_async(request.prompt, request.files)
+        if request.user_clarifications:
+            yield self._format_sse("USER_PREFERENCES_APPLIED", {
+                "clarifications": request.user_clarifications,
+                "plan_summary": request.approved_plan_summary or ""
+            })
+
+        structured_goal = await self.structurer.structure_async(effective_prompt, request.files)
         yield self._format_sse("STRUCTURING_COMPLETED", {
             "structured_goal": structured_goal.model_dump()
         })
@@ -59,7 +79,7 @@ class OmniOrchestrator:
         })
 
         # --- STEP 3: INITIALIZE COMMON CONTEXT BLACKBOARD ---
-        blackboard = CommonContextBlackboard(session_id, request.prompt)
+        blackboard = CommonContextBlackboard(session_id, effective_prompt)
         blackboard.set_structured_goal(routed_plan, request.files)
 
         yield self._format_sse("BLACKBOARD_INITIALIZED", {

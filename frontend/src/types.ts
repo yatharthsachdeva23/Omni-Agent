@@ -102,3 +102,29 @@ export interface AdvisorResponse {
     instruction: string;
   }>;
 }
+
+export interface PlanClarifyingQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  default_selected?: string;
+  allow_custom?: boolean;
+}
+
+export interface ImplementationStepPlan {
+  step_number: number;
+  title: string;
+  domain: string;
+  assigned_worker: string;
+  description: string;
+  expected_output: string;
+}
+
+export interface InteractivePlanResponse {
+  objective_summary: string;
+  architectural_approach: string;
+  assumptions: string[];
+  steps: ImplementationStepPlan[];
+  clarifying_questions: PlanClarifyingQuestion[];
+  suggested_focus?: string;
+}

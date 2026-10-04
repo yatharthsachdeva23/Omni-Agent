@@ -5,22 +5,32 @@ import {
   X,
   Play,
   Paperclip,
-  Sparkles
+  Sparkles,
+  HelpCircle
 } from 'lucide-react';
 import {
   IngestedFile,
   StructuredGoal,
   BlackboardSnapshot,
   FinalEvaluationResult,
-  StructuredSubTask
+  StructuredSubTask,
+  InteractivePlanResponse
 } from '../types';
 import { LiveExecutionVisualizer } from './LiveExecutionVisualizer';
+import { InteractivePlanCard } from './InteractivePlanCard';
 
 export const Track2Execution: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [files, setFiles] = useState<IngestedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+
+  // 'Ask Before Doing' State (Enabled by default as requested)
+  const [askBeforeDoing, setAskBeforeDoing] = useState<boolean>(true);
+  const [isPlanning, setIsPlanning] = useState<boolean>(false);
+  const [interactivePlan, setInteractivePlan] = useState<InteractivePlanResponse | null>(null);
+  const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
+  const [customNotes, setCustomNotes] = useState<string>('');
 
   // Live Telemetry States
   const [currentStage, setCurrentStage] = useState<string>('READY');
@@ -73,7 +83,62 @@ export const Track2Execution: React.FC = () => {
     setFiles(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const handleExecute = async (overridePrompt?: string) => {
+  // Step 1: Formulate Implementation Plan & Clarifying Questions (Ask Before Doing)
+  const handleFormulatePlan = async (overridePrompt?: string) => {
+    const taskPrompt = overridePrompt || prompt;
+    if (!taskPrompt.trim()) return;
+
+    setIsPlanning(true);
+    try {
+      const res = await fetch('/api/interactive-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: taskPrompt,
+          files: files
+        })
+      });
+      if (!res.ok) throw new Error('Failed to generate interactive plan');
+      const planData: InteractivePlanResponse = await res.json();
+      setInteractivePlan(planData);
+
+      // Pre-select defaults
+      const initialAnswers: Record<string, string> = {};
+      if (planData.clarifying_questions) {
+        planData.clarifying_questions.forEach(q => {
+          initialAnswers[q.id] = q.default_selected || (q.options[0] || '');
+        });
+      }
+      setUserAnswers(initialAnswers);
+    } catch (err) {
+      console.error('Plan formulation error:', err);
+      // Fallback: If plan formulation fails, proceed directly
+      handleExecute(taskPrompt);
+    } finally {
+      setIsPlanning(false);
+    }
+  };
+
+  // Step 2: Approve & Execute with user answers incorporated
+  const handleExecuteWithApprovedPlan = () => {
+    if (!interactivePlan) return;
+
+    // Combine answers with custom notes
+    const finalClarifications = { ...userAnswers };
+    if (customNotes.trim()) {
+      finalClarifications["Additional Custom Directives"] = customNotes.trim();
+    }
+
+    const planSummary = `Objective: ${interactivePlan.objective_summary}. Approach: ${interactivePlan.architectural_approach}. Steps: ${interactivePlan.steps.map(s => s.title).join(' -> ')}`;
+
+    handleExecute(prompt, finalClarifications, planSummary);
+  };
+
+  const handleExecute = async (
+    overridePrompt?: string,
+    clarifications?: Record<string, string>,
+    planSummary?: string
+  ) => {
     const taskPrompt = overridePrompt || prompt;
     if (!taskPrompt.trim()) return;
 
@@ -93,7 +158,10 @@ export const Track2Execution: React.FC = () => {
           prompt: taskPrompt,
           files: files,
           mode: 'paid',
-          allow_simulation: true
+          allow_simulation: true,
+          ask_before_doing: askBeforeDoing,
+          user_clarifications: clarifications || (interactivePlan ? userAnswers : undefined),
+          approved_plan_summary: planSummary || (interactivePlan ? interactivePlan.architectural_approach : undefined)
         })
       });
 
@@ -168,7 +236,7 @@ export const Track2Execution: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-12 pb-20 pt-6">
+    <div className="max-w-4xl mx-auto space-y-10 pb-20 pt-6">
       {/* Editorial Hero */}
       <div className="text-center space-y-4 max-w-2xl mx-auto">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-white/[0.03] text-xs text-neutral-300">
@@ -190,8 +258,11 @@ export const Track2Execution: React.FC = () => {
       <div className="bg-[#080808] border border-white/[0.08] rounded-2xl p-5 shadow-2xl space-y-5">
         <textarea
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          disabled={isExecuting}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            if (interactivePlan) setInteractivePlan(null);
+          }}
+          disabled={isExecuting || isPlanning}
           placeholder="State your complex task in natural language. Ingest data files or paste context below..."
           rows={3}
           className="w-full bg-[#030303] border border-white/[0.08] rounded-xl p-4 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-white/30 transition-all resize-none font-sans disabled:opacity-50"
@@ -207,11 +278,51 @@ export const Track2Execution: React.FC = () => {
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading || isExecuting}
+              disabled={isUploading || isExecuting || isPlanning}
               className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-transparent hover:bg-white/[0.05] text-xs font-medium text-neutral-300 hover:text-white border border-white/[0.1] hover:border-white/[0.2] transition-all disabled:opacity-50"
             >
               <Paperclip className="w-3.5 h-3.5 text-neutral-400" />
               <span>{isUploading ? 'Ingesting...' : 'Ingest File'}</span>
+            </button>
+
+            {/* TOGGLE BUTTON: Ask Before Doing */}
+            <button
+              type="button"
+              onClick={() => {
+                const nextState = !askBeforeDoing;
+                setAskBeforeDoing(nextState);
+                if (!nextState) {
+                  setInteractivePlan(null);
+                }
+              }}
+              disabled={isExecuting || isPlanning}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium border transition-all select-none ${
+                askBeforeDoing
+                  ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/15 hover:border-emerald-500/50 shadow-sm'
+                  : 'bg-white/[0.02] border-white/[0.08] text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.05]'
+              }`}
+              title={
+                askBeforeDoing
+                  ? "Ask Before Doing (Active): Analyzes objective, outlines implementation plan, and asks clarifying questions before execution."
+                  : "Ask Before Doing (Disabled): Directly executes full autonomous pipeline in one shot without asking."
+              }
+            >
+              {/* Pill Switch */}
+              <div
+                className={`w-7 h-4 rounded-full p-0.5 transition-colors flex items-center ${
+                  askBeforeDoing ? 'bg-emerald-500 justify-end' : 'bg-neutral-700 justify-start'
+                }`}
+              >
+                <div className="w-3 h-3 rounded-full bg-black shadow-sm transition-transform"></div>
+              </div>
+              <span className="font-medium">Ask Before Doing</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider font-semibold ${
+                  askBeforeDoing ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/[0.06] text-neutral-400'
+                }`}
+              >
+                {askBeforeDoing ? 'ON' : 'OFF'}
+              </span>
             </button>
 
             {files.map((file, idx) => (
@@ -234,17 +345,39 @@ export const Track2Execution: React.FC = () => {
             ))}
           </div>
 
-          {/* Pure White CTA Button (Resend signature) */}
+          {/* Primary Action CTA Button */}
           <button
-            onClick={() => handleExecute()}
-            disabled={isExecuting || !prompt.trim()}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-black font-semibold text-xs transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-sm"
+            onClick={() => {
+              if (askBeforeDoing && !interactivePlan) {
+                handleFormulatePlan();
+              } else if (askBeforeDoing && interactivePlan) {
+                handleExecuteWithApprovedPlan();
+              } else {
+                handleExecute();
+              }
+            }}
+            disabled={isExecuting || isPlanning || !prompt.trim()}
+            className={`w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-xs transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-sm ${
+              askBeforeDoing && !interactivePlan
+                ? 'bg-emerald-400 hover:bg-emerald-300 text-black shadow-emerald-500/20'
+                : 'bg-white hover:bg-neutral-200 text-black'
+            }`}
           >
-            {isExecuting ? (
+            {isPlanning ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin"></span>
+                Formulating Plan &amp; Questions...
+              </span>
+            ) : isExecuting ? (
               <span className="flex items-center gap-2">
                 <span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin"></span>
                 Orchestrating...
               </span>
+            ) : askBeforeDoing && !interactivePlan ? (
+              <>
+                <Sparkles className="w-3.5 h-3.5 fill-black" />
+                <span>Plan &amp; Ask Questions</span>
+              </>
             ) : (
               <>
                 <Play className="w-3.5 h-3.5 fill-black" />
@@ -262,9 +395,14 @@ export const Track2Execution: React.FC = () => {
               key={i}
               onClick={() => {
                 setPrompt(sc.prompt);
-                handleExecute(sc.prompt);
+                setInteractivePlan(null);
+                if (askBeforeDoing) {
+                  handleFormulatePlan(sc.prompt);
+                } else {
+                  handleExecute(sc.prompt);
+                }
               }}
-              disabled={isExecuting}
+              disabled={isExecuting || isPlanning}
               className="text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.02] hover:bg-white/[0.06] text-neutral-400 hover:text-white border border-white/[0.06] transition-all font-mono"
             >
               {sc.label}
@@ -272,6 +410,20 @@ export const Track2Execution: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* Interactive Plan Card (When Ask Before Doing is ON and plan is ready) */}
+      {interactivePlan && !isExecuting && (
+        <InteractivePlanCard
+          plan={interactivePlan}
+          userAnswers={userAnswers}
+          onAnswerChange={(qId, ans) => setUserAnswers(prev => ({ ...prev, [qId]: ans }))}
+          customNotes={customNotes}
+          onCustomNotesChange={setCustomNotes}
+          onApproveAndExecute={handleExecuteWithApprovedPlan}
+          onCancelOrRevise={() => setInteractivePlan(null)}
+          isExecuting={isExecuting}
+        />
+      )}
 
       {/* Live Telemetry View */}
       {(structuredGoal || isExecuting || finalEvaluation) && (

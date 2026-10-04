@@ -10,10 +10,12 @@ from app.models.schemas import (
     TaskRequest,
     IngestedFile,
     AdvisorResponse,
+    InteractivePlanResponse,
 )
 from app.advisor.recommender import AIAdvisorEngine
 from app.advisor.tools_catalog import AI_TOOLS_CATALOG
 from app.orchestrator import OmniOrchestrator
+from app.core.interactive_planner import InteractivePlannerAgent
 
 app = FastAPI(
     title="Omni Agent API",
@@ -32,6 +34,7 @@ app.add_middleware(
 
 advisor_engine = AIAdvisorEngine()
 orchestrator = OmniOrchestrator()
+interactive_planner = InteractivePlannerAgent()
 
 @app.get("/api/health")
 async def health_check():
@@ -40,8 +43,26 @@ async def health_check():
         "system": "Omni Agent Core Engine",
         "python_version": "3.12",
         "jev_system1_router": "online",
-        "common_context_engine": "ready"
+        "common_context_engine": "ready",
+        "ask_before_doing": "online"
     }
+
+@app.post("/api/interactive-plan", response_model=InteractivePlanResponse)
+async def generate_interactive_plan(payload: dict):
+    prompt = payload.get("prompt", "").strip()
+    files_data = payload.get("files", [])
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt is required to formulate an implementation plan")
+    
+    files = []
+    for f in files_data:
+        try:
+            files.append(IngestedFile(**f))
+        except Exception:
+            pass
+            
+    plan = await interactive_planner.plan_async(prompt, files)
+    return plan
 
 @app.get("/api/catalog")
 async def get_tools_catalog():
