@@ -5,6 +5,8 @@ export interface IngestedFile {
   preview_or_content: string;
 }
 
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
 export interface StructuredSubTask {
   step_id: string;
   title: string;
@@ -14,7 +16,7 @@ export interface StructuredSubTask {
   assigned_reviewer_model: string;
   required_prerequisites: string[];
   expected_output_type: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  status: TaskStatus;
 }
 
 export interface StructuredGoal {
@@ -99,7 +101,9 @@ export interface AdvisorResponse {
     step: number;
     action: string;
     recommended_tool: string;
-    instruction: string;
+    instruction?: string;
+    input?: string;
+    expected_output?: string;
   }>;
 }
 

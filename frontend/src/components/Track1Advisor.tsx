@@ -2,8 +2,16 @@ import React, { useState } from 'react';
 import { Send, Copy, Check, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 import { AdvisorResponse } from '../types';
 
-export const Track1Advisor: React.FC = () => {
-  const [prompt, setPrompt] = useState('');
+interface Track1AdvisorProps {
+  onGenerate?: (promptText: string) => void;
+  initialPrompt?: string;
+}
+
+export const Track1Advisor: React.FC<Track1AdvisorProps> = ({
+  onGenerate,
+  initialPrompt = ''
+}) => {
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AdvisorResponse | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -18,6 +26,11 @@ export const Track1Advisor: React.FC = () => {
   const handleAdvise = async (queryText?: string) => {
     const q = queryText || prompt;
     if (!q.trim()) return;
+
+    if (onGenerate) {
+      onGenerate(q);
+      return;
+    }
 
     setLoading(true);
     try {

@@ -2,10 +2,23 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { Track1Advisor } from './components/Track1Advisor';
 import { Track2Execution } from './components/Track2Execution';
+import { AnalyzerWorkspace } from './components/AnalyzerWorkspace';
+import { WorkerWorkspace } from './components/WorkerWorkspace';
+import { IngestedFile } from './types';
 import { ToolCatalogModal } from './components/ToolCatalogModal';
 import { Compass, Zap, ArrowDown, ChevronDown, Sparkles, Layers, ShieldCheck, Cpu } from 'lucide-react';
 
+type AppView = 'landing' | 'analyzer-workspace' | 'worker-workspace';
+
 export const App: React.FC = () => {
+  const [activeView, setActiveView] = useState<AppView>('landing');
+  const [analyzerPrompt, setAnalyzerPrompt] = useState<string>('');
+  const [workerPrompt, setWorkerPrompt] = useState<string>('');
+  const [workerFiles, setWorkerFiles] = useState<IngestedFile[]>([]);
+  const [workerAskBeforeDoing, setWorkerAskBeforeDoing] = useState<boolean>(true);
+  const [workerClarifications, setWorkerClarifications] = useState<Record<string, string> | undefined>(undefined);
+  const [workerPlanSummary, setWorkerPlanSummary] = useState<string | undefined>(undefined);
+
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('hero');
 
@@ -33,25 +46,19 @@ export const App: React.FC = () => {
       const rect = el.getBoundingClientRect();
       const vh = window.innerHeight;
 
-      // When the element covers the center of the viewport, it's 100% visible
       if (rect.top <= vh * 0.5 && rect.bottom >= vh * 0.5) {
         return 1.0;
       }
-
-      // When entering from the bottom
       if (rect.top > vh * 0.5) {
         const dist = rect.top - vh * 0.5;
         const maxDist = vh * 0.6;
         return Math.max(0.15, Math.min(1.0, 1.0 - (dist / maxDist) * 0.85));
       }
-
-      // When exiting to the top
       if (rect.bottom < vh * 0.5) {
         const dist = (vh * 0.5) - rect.bottom;
         const maxDist = vh * 0.6;
         return Math.max(0.15, Math.min(1.0, 1.0 - (dist / maxDist) * 0.85));
       }
-
       return 1.0;
     };
 
@@ -64,7 +71,6 @@ export const App: React.FC = () => {
       setAnalyzerOpacity(aOp);
       setWorkerOpacity(wOp);
 
-      // Determine active section for Navbar highlight
       if (hOp >= aOp && hOp >= wOp) {
         setActiveSection('hero');
       } else if (aOp >= hOp && aOp >= wOp) {
@@ -79,6 +85,58 @@ export const App: React.FC = () => {
 
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // VIEW 1: DEDICATED ANALYZER WORKSPACE ("NEW WEBPAGE")
+  if (activeView === 'analyzer-workspace') {
+    return (
+      <>
+        <AnalyzerWorkspace
+          prompt={analyzerPrompt}
+          onBack={() => {
+            setActiveView('landing');
+            setTimeout(() => scrollToSection('analyzer'), 50);
+          }}
+          onRunAgain={(newP) => setAnalyzerPrompt(newP)}
+          onDeployToWorkerPool={(p) => {
+            setWorkerPrompt(p);
+            setWorkerFiles([]);
+            setWorkerAskBeforeDoing(true);
+            setWorkerClarifications(undefined);
+            setWorkerPlanSummary(undefined);
+            setActiveView('worker-workspace');
+          }}
+        />
+        <ToolCatalogModal
+          isOpen={isCatalogOpen}
+          onClose={() => setIsCatalogOpen(false)}
+        />
+      </>
+    );
+  }
+
+  // VIEW 2: DEDICATED WORKER POOL WORKSPACE ("NEW WEBPAGE")
+  if (activeView === 'worker-workspace') {
+    return (
+      <>
+        <WorkerWorkspace
+          prompt={workerPrompt}
+          files={workerFiles}
+          askBeforeDoing={workerAskBeforeDoing}
+          clarifications={workerClarifications}
+          approvedPlanSummary={workerPlanSummary}
+          onBack={() => {
+            setActiveView('landing');
+            setTimeout(() => scrollToSection('worker-pool'), 50);
+          }}
+          onRunAgain={(newP) => setWorkerPrompt(newP)}
+        />
+        <ToolCatalogModal
+          isOpen={isCatalogOpen}
+          onClose={() => setIsCatalogOpen(false)}
+        />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black text-[#ededed] flex flex-col font-['Inter',sans-serif] relative selection:bg-white/20 selection:text-white">
@@ -227,7 +285,13 @@ export const App: React.FC = () => {
 
           {/* Full Interactive Tooling for Track 1 */}
           <div className="w-full">
-            <Track1Advisor />
+            <Track1Advisor
+              onGenerate={(p) => {
+                setAnalyzerPrompt(p);
+                setActiveView('analyzer-workspace');
+              }}
+              initialPrompt={analyzerPrompt}
+            />
           </div>
         </section>
 
@@ -257,7 +321,17 @@ export const App: React.FC = () => {
 
           {/* Full Interactive Tooling for Track 2 */}
           <div className="w-full">
-            <Track2Execution />
+            <Track2Execution
+              onLaunchExecution={(params) => {
+                setWorkerPrompt(params.prompt);
+                setWorkerFiles(params.files);
+                setWorkerAskBeforeDoing(params.askBeforeDoing);
+                setWorkerClarifications(params.clarifications);
+                setWorkerPlanSummary(params.approvedPlanSummary);
+                setActiveView('worker-workspace');
+              }}
+              initialPrompt={workerPrompt}
+            />
           </div>
         </section>
 

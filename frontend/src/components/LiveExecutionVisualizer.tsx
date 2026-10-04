@@ -466,7 +466,7 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                               </div>
                             </div>
                           )}
-                          <div className="p-3.5 rounded-xl bg-[#030303] border border-white/[0.06] font-mono text-xs text-neutral-200 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto">
+                          <div className="p-4 rounded-xl bg-[#020202] border border-white/[0.08] font-mono text-xs text-neutral-200 overflow-x-auto whitespace-pre-wrap leading-relaxed min-h-[220px] max-h-[650px] overflow-y-auto selection:bg-indigo-500/30">
                             {output.output_text}
                           </div>
                         </div>
@@ -697,7 +697,7 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                       </div>
                     )}
 
-                    <div className="p-3 rounded-xl bg-[#000000] font-mono text-xs text-neutral-300 max-h-48 overflow-y-auto whitespace-pre-wrap border border-white/[0.06]">
+                    <div className="p-4 rounded-xl bg-[#000000] font-mono text-xs text-neutral-200 min-h-[220px] max-h-[650px] overflow-y-auto whitespace-pre-wrap border border-white/[0.08] selection:bg-indigo-500/30">
                       {del.summary}
                     </div>
                   </div>

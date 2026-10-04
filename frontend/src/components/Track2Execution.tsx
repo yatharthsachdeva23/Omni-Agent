@@ -19,8 +19,22 @@ import {
 import { LiveExecutionVisualizer } from './LiveExecutionVisualizer';
 import { InteractivePlanCard } from './InteractivePlanCard';
 
-export const Track2Execution: React.FC = () => {
-  const [prompt, setPrompt] = useState('');
+interface Track2ExecutionProps {
+  onLaunchExecution?: (params: {
+    prompt: string;
+    files: IngestedFile[];
+    askBeforeDoing: boolean;
+    clarifications?: Record<string, string>;
+    approvedPlanSummary?: string;
+  }) => void;
+  initialPrompt?: string;
+}
+
+export const Track2Execution: React.FC<Track2ExecutionProps> = ({
+  onLaunchExecution,
+  initialPrompt = ''
+}) => {
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [files, setFiles] = useState<IngestedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -141,6 +155,17 @@ export const Track2Execution: React.FC = () => {
   ) => {
     const taskPrompt = overridePrompt || prompt;
     if (!taskPrompt.trim()) return;
+
+    if (onLaunchExecution) {
+      onLaunchExecution({
+        prompt: taskPrompt,
+        files: files,
+        askBeforeDoing: askBeforeDoing,
+        clarifications: clarifications || (interactivePlan ? userAnswers : undefined),
+        approvedPlanSummary: planSummary || (interactivePlan ? interactivePlan.architectural_approach : undefined)
+      });
+      return;
+    }
 
     setIsExecuting(true);
     setCurrentStage('STARTING');
