@@ -274,7 +274,7 @@ export const App: React.FC = () => {
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Omni Agent Ecosystem &bull; Python 3.12 Engine</span>
+            <span>OmniTask AI Ecosystem &bull; Python 3.12 Engine</span>
           </div>
           <p className="text-neutral-600 text-[11px]">
             Jev System 1 Routing &bull; Common Context Blackboard &bull; Gemini Multimodal QA

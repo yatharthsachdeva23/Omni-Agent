@@ -144,7 +144,7 @@ export const Track2Execution: React.FC = () => {
 
     setIsExecuting(true);
     setCurrentStage('STARTING');
-    setStageMessage('Initializing Omni Agent pipeline...');
+    setStageMessage('Initializing OmniTask AI pipeline...');
     setStructuredGoal(null);
     setBlackboard(null);
     setActiveSubtask(null);

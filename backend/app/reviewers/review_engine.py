@@ -115,7 +115,7 @@ class IntermediateReviewEngine:
         Evaluates task fulfillment honestly: failing or off-task workers receive a rejected status and low score.
         """
         prompt_text = (
-            f"You are the Gemini Quality Reviewer for Omni Agent.\n"
+            f"You are the Gemini Quality Reviewer for OmniTask AI.\n"
             f"Strictly review the following output from Sub-Agent {worker_result.worker_model} for step '{task.title}'.\n\n"
             f"User's Overall Objective: {primary_objective or task.description}\n"
             f"THIS SUB-AGENT'S ASSIGNED STEP: '{task.title}'\n"
@@ -171,7 +171,7 @@ class IntermediateReviewEngine:
         primary_objective: str = ""
     ) -> Tuple[Optional[IntermediateReviewResult], Optional[NegativeKnowledgeItem]]:
         system_prompt = (
-            "You are the Strict Quality Reviewer for Omni Agent.\n"
+            "You are the Strict Quality Reviewer for OmniTask AI.\n"
             "Evaluate whether the worker output faithfully fulfilled the task and user objective.\n"
             "CRITICAL: If the worker said it cannot access files, refused, or output placeholder text, reject it with score < 30.\n"
             "Output strictly valid JSON with keys: 'passed' (bool), 'status' ('approved'|'rejected'|'warning'), 'quality_score' (int 0-100), 'critique' (str), 'recommendations' (list of str), 'negative_knowledge_directive' (str)."

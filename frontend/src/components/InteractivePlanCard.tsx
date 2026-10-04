@@ -85,7 +85,7 @@ export const InteractivePlanCard: React.FC<InteractivePlanCardProps> = ({
             Proposed Implementation Plan
           </h2>
           <p className="text-xs text-neutral-400 max-w-2xl leading-relaxed">
-            Omni Agent analyzed your request. Review the planned execution steps, select your preferences on the clarifying questions, or approve to start the swarm.
+            OmniTask AI analyzed your request. Review the planned execution steps, select your preferences on the clarifying questions, or approve to start the swarm.
           </p>
         </div>
 

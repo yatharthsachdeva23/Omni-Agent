@@ -72,7 +72,7 @@ class JSONStructurerAgent:
 
     async def _call_gemini_structurer(self, prompt: str, files_context: str, files: List[IngestedFile]) -> Optional[StructuredGoal]:
         prompt_instruction = (
-            "You are the JSON Structurer Agent for Omni Agent.\n"
+            "You are the JSON Structurer Agent for OmniTask AI.\n"
             "Analyze the following user objective and attached resources:\n\n"
             f"User Objective: \"{prompt}\"\n"
             f"Attached Files:\n{files_context}\n\n"
@@ -138,7 +138,7 @@ class JSONStructurerAgent:
 
     async def _call_groq_structurer(self, prompt: str, files_context: str, files: List[IngestedFile]) -> Optional[StructuredGoal]:
         system_prompt = (
-            "You are the JSON Structurer Agent for Omni Agent.\n"
+            "You are the JSON Structurer Agent for OmniTask AI.\n"
             "Decompose user requests and attached resources into a validated DAG of sequential subtasks.\n"
             "Output strictly valid JSON with keys: 'primary_objective', 'constraints', 'prerequisites', and 'sub_tasks'."
         )

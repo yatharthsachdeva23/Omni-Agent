@@ -52,7 +52,7 @@ export const Track1Advisor: React.FC = () => {
 
         <h1 className="text-4xl sm:text-5xl font-medium tracking-tight text-white leading-[1.15]">
           Don't know which AI to use? <br />
-          <span className="text-neutral-400">Let Omni Agent prescribe your toolkit.</span>
+          <span className="text-neutral-400">Let OmniTask AI prescribe your toolkit.</span>
         </h1>
 
         <p className="text-sm text-neutral-400 leading-relaxed max-w-lg mx-auto">

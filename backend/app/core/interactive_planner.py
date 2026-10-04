@@ -55,7 +55,7 @@ class InteractivePlannerAgent:
 
     async def _call_groq_planner(self, prompt: str, files_context: str) -> Optional[InteractivePlanResponse]:
         system_prompt = (
-            "You are the Lead Solutions Architect for Omni Agent, a premier multi-agent autonomous system.\n"
+            "You are the Lead Solutions Architect for OmniTask AI, a premier multi-agent autonomous system.\n"
             "The user provided a goal, and 'Ask Before Doing' is enabled.\n"
             "Your objective:\n"
             "1. Deeply understand what the user wants to achieve.\n"
@@ -123,7 +123,7 @@ class InteractivePlannerAgent:
     async def _call_gemini_planner(self, prompt: str, files_context: str) -> Optional[InteractivePlanResponse]:
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.gemini_key}"
         prompt_instruction = (
-            "You are the Lead Solutions Architect for Omni Agent. Formulate an implementation plan and clarifying questions.\n"
+            "You are the Lead Solutions Architect for OmniTask AI. Formulate an implementation plan and clarifying questions.\n"
             f"User Request: \"{prompt}\"\nAttached Files:\n{files_context}\n\n"
             "Return strictly valid JSON conforming to the requested schema with objective_summary, architectural_approach, assumptions, steps, and clarifying_questions."
         )

@@ -1,1 +1,1 @@
-# Core package for Omni Agent
+# Core package for OmniTask AI

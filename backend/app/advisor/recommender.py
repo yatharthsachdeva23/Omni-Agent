@@ -73,7 +73,7 @@ class AIAdvisorEngine:
         Calls Google Gemini using structured JSON mode to analyze the user's objective.
         """
         prompt = (
-            f"You are the AI Advisor for Omni Agent.\n"
+            "You are the AI Advisor for OmniTask AI.\n"
             f"Analyze this complex user goal deeply:\n"
             f"\"{user_query}\"\n\n"
             f"Break this goal down into logical milestones and prescribe 2 to 4 of the most suitable tools from the catalog below.\n"
@@ -133,7 +133,7 @@ class AIAdvisorEngine:
         Calls Groq Cloud (llama-3.3-70b-versatile or qwen-2.5-coder-32b) with JSON mode.
         """
         system_prompt = (
-            "You are the AI Advisor for Omni Agent.\n"
+            "You are the AI Advisor for OmniTask AI.\n"
             "Analyze the user's objective, choose optimal tools from the catalog, and generate custom DIY prompt templates.\n"
             f"AVAILABLE TOOLS CATALOG:\n{self.catalog_context}\n\n"
             "Output ONLY valid JSON with keys: 'task_decomposition' (list of strings), 'recommendations' (list of recommendation objects), and 'diy_execution_blueprint' (list of blueprint objects)."

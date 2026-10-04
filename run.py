@@ -1,5 +1,5 @@
 """
-Omni Agent Application Launcher
+OmniTask AI Application Launcher
 Runs the complete fullstack application on Python 3.12 at http://localhost:8000
 """
 
@@ -24,7 +24,7 @@ def find_available_port(preferred_port: int = 8000) -> int:
     return preferred_port
 
 def main():
-    parser = argparse.ArgumentParser(description="Omni Agent Application Launcher")
+    parser = argparse.ArgumentParser(description="OmniTask AI Application Launcher")
     parser.add_argument("--port", type=int, default=None, help="Port to bind the server")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host interface")
     args = parser.parse_args()
@@ -53,7 +53,7 @@ def main():
     display_host = "localhost" if args.host == "0.0.0.0" else args.host
 
     print("=" * 60)
-    print(">> LAUNCHING OMNI AGENT (PYTHON 3.12 + JEV ROUTING CORE)")
+    print(">> LAUNCHING OMNITASK AI (PYTHON 3.12 + JEV ROUTING CORE)")
     print("=" * 60)
     print(f" * Web UI & API Gateway: http://{display_host}:{port}")
     print(f" * Interactive Swagger:  http://{display_host}:{port}/docs")
@@ -75,7 +75,7 @@ def main():
     try:
         subprocess.run(cmd, cwd=str(backend_dir))
     except KeyboardInterrupt:
-        print("\nOmni Agent server stopped gracefully.")
+        print("\nOmniTask AI server stopped gracefully.")
 
 if __name__ == "__main__":
     main()

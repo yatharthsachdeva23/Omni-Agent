@@ -53,7 +53,7 @@ export const ToolCatalogModal: React.FC<ToolCatalogModalProps> = ({ isOpen, onCl
               <Sparkles className="w-3.5 h-3.5" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white">Omni Agent AI Matrix</h3>
+              <h3 className="text-sm font-semibold text-white">OmniTask AI Matrix</h3>
               <p className="text-[11px] text-neutral-400">Directory of onboarded models & specialized agents</p>
             </div>
           </div>

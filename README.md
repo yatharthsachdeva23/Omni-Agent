@@ -1,5 +1,5 @@
-# Omni Agent 🚀
-### Universal Multi-Agent Orchestration & AI Decision Ecosystem
+# OmniTask AI 🚀
+### Universal Multi-Agent Task Orchestration & AI Decision Ecosystem
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-1.0-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -7,7 +7,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Omni Agent** is an all-in-one multi-agent platform designed to tackle complex, multi-stage workflows that standard single-model AIs cannot execute alone. It integrates high-speed task classification via **Jev (System 1)**, state persistence and error mitigation through a **Common Context Blackboard**, domain-matched intermediate quality gates powered exclusively by **Google Gemini**, and specialist worker execution across **Qwen 2.5 Coder**, **Mistral**, **OpenAI GPT**, and **Flux.1**.
+> **OmniTask AI** is an all-in-one multi-agent platform designed to tackle complex, multi-stage workflows that standard single-model AIs cannot execute alone. It integrates high-speed task classification via **Jev (System 1)**, interactive planning and user clarification gates, state persistence and error mitigation through a **Common Context Blackboard**, domain-matched intermediate quality gates powered exclusively by **Google Gemini**, and specialist worker execution across **Qwen 2.5 Coder**, **Mistral**, **OpenAI GPT**, and **Flux.1**.
 
 ---
 

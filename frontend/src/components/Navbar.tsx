@@ -36,12 +36,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => handleNavClick('hero')}
               className="flex items-center gap-2.5 group text-left"
             >
-              <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-black font-black text-xs tracking-tighter group-hover:scale-105 transition-transform shadow-sm">
-                OA
-              </div>
-              <span className="font-semibold text-sm tracking-tight text-white group-hover:text-neutral-200 transition">
-                Omni Agent
-              </span>
+              <img
+                src="/omnitask-logo.png"
+                alt="OmniTask AI"
+                className="h-6 sm:h-7 w-auto object-contain hover:opacity-90 transition-opacity"
+              />
             </button>
 
             <div className="hidden lg:flex items-center gap-2 pl-3 border-l border-white/[0.1] text-[11px] font-mono text-neutral-400">

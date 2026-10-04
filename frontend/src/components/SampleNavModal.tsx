@@ -26,13 +26,15 @@ export const SampleNavModal: React.FC<SampleNavModalProps> = ({
       >
         {/* Modal Header */}
         <div className="p-5 border-b border-white/[0.08] flex items-center justify-between bg-white/[0.02]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-black font-black text-xs">
-              OA
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-white tracking-tight">Omni Agent Portal</h3>
-              <p className="text-[11px] font-mono text-neutral-400">Autonomous Orchestration & Knowledge Swarm</p>
+          <div className="flex items-center gap-3">
+            <img
+              src="/omnitask-logo.png"
+              alt="OmniTask AI"
+              className="h-6 w-auto object-contain"
+            />
+            <div className="border-l border-white/[0.1] pl-3">
+              <h3 className="text-sm font-semibold text-white tracking-tight">Portal &amp; Guides</h3>
+              <p className="text-[11px] font-mono text-neutral-400">Autonomous Orchestration Swarm</p>
             </div>
           </div>
           <button
@@ -99,10 +101,10 @@ export const SampleNavModal: React.FC<SampleNavModalProps> = ({
               <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-2">
                 <h4 className="text-sm font-semibold text-white flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-amber-400" />
-                  What is Omni Agent?
+                  What is OmniTask AI?
                 </h4>
                 <p className="text-neutral-300">
-                  Omni Agent is an advanced autonomous multi-agent platform designed to solve complex software engineering, 
+                  OmniTask AI is an advanced autonomous multi-agent platform designed to solve complex software engineering, 
                   quantitative analysis, visual generation, and multimodal workflows through unified orchestration.
                 </p>
               </div>
@@ -136,7 +138,7 @@ export const SampleNavModal: React.FC<SampleNavModalProps> = ({
             <div className="space-y-3.5">
               <h4 className="text-sm font-semibold text-white">Architecture & API Guide</h4>
               <p className="text-neutral-400">
-                Omni Agent decomposes every prompt into a sequential Directed Acyclic Graph (DAG) with synchronized blackboard state.
+                OmniTask AI decomposes every prompt into a sequential Directed Acyclic Graph (DAG) with synchronized blackboard state.
               </p>
 
               <div className="space-y-2">
@@ -167,7 +169,7 @@ export const SampleNavModal: React.FC<SampleNavModalProps> = ({
             <div className="space-y-4">
               <h4 className="text-sm font-semibold text-white">Connect & Support</h4>
               <p className="text-neutral-400">
-                Omni Agent is maintained as an active research project for Advanced Agentic Coding and swarm orchestration.
+                OmniTask AI is maintained as an active research project for Advanced Agentic Coding and swarm orchestration.
               </p>
 
               <div className="space-y-2.5">
@@ -232,7 +234,7 @@ export const SampleNavModal: React.FC<SampleNavModalProps> = ({
                     <span className="text-neutral-500 group-open:rotate-180 transition">&darr;</span>
                   </summary>
                   <p className="mt-2 text-neutral-400 text-xs">
-                    Yes. Omni Agent includes dynamic offline autonomous generators that synthesize clean code, mathematical derivations, and executive syntheses even if cloud APIs are unavailable.
+                    Yes. OmniTask AI includes dynamic offline autonomous generators that synthesize clean code, mathematical derivations, and executive syntheses even if cloud APIs are unavailable.
                   </p>
                 </details>
               </div>

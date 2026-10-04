@@ -18,7 +18,7 @@ from app.orchestrator import OmniOrchestrator
 from app.core.interactive_planner import InteractivePlannerAgent
 
 app = FastAPI(
-    title="Omni Agent API",
+    title="OmniTask AI API",
     description="Universal Multi-Agent Orchestration & AI Decision Engine",
     version="1.0.0"
 )
@@ -40,7 +40,7 @@ interactive_planner = InteractivePlannerAgent()
 async def health_check():
     return {
         "status": "healthy",
-        "system": "Omni Agent Core Engine",
+        "system": "OmniTask AI Core Engine",
         "python_version": "3.12",
         "jev_system1_router": "online",
         "common_context_engine": "ready",
