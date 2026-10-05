@@ -23,7 +23,6 @@ import {
   TaskStatus
 } from '../types';
 import { LiveExecutionVisualizer } from './LiveExecutionVisualizer';
-import { AiOrchestrationMesh } from './AiOrchestrationMesh';
 
 interface WorkerWorkspaceProps {
   prompt: string;
@@ -373,11 +372,6 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
             finalEvaluation={finalEvaluation}
             isExecuting={isExecuting}
           />
-        </div>
-
-        {/* AI Orchestration Mesh (Resend Style) */}
-        <div className="pt-8">
-          <AiOrchestrationMesh />
         </div>
 
       </main>

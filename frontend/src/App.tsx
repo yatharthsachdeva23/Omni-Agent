@@ -253,6 +253,13 @@ export const App: React.FC = () => {
 
           </div>
 
+          {/* =========================================================================
+              AI ORCHESTRATION ENGINES & LOGOS (BELOW THE TWO OPTIONS, ABOVE TRACK 1)
+             ========================================================================= */}
+          <div className="w-full mt-20 pt-16 border-t border-white/[0.1]">
+            <AiOrchestrationMesh onExploreArchitecture={() => setIsCatalogOpen(true)} />
+          </div>
+
           {/* Gentle Scroll Indicator */}
           <div className="mt-14 flex flex-col items-center gap-1.5 text-neutral-500 font-mono text-[11px] select-none opacity-80">
             <span>Scroll to navigate dedicated spaces</span>
@@ -334,13 +341,6 @@ export const App: React.FC = () => {
               initialPrompt={workerPrompt}
             />
           </div>
-        </section>
-
-        {/* =========================================================================
-            SECTION 4: ORCHESTRATION ENGINES & AI LOGO MESH (RESEND-STYLE)
-           ========================================================================= */}
-        <section id="orchestration-mesh" className="w-full">
-          <AiOrchestrationMesh onExploreArchitecture={() => setIsCatalogOpen(true)} />
         </section>
 
       </main>
