@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@lobehub/icons-static-svg": "^1.95.1",
     "@types/katex": "^0.16.8",
     "katex": "^0.19.0",
     "lucide-react": "^0.475.0",
