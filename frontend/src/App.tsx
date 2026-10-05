@@ -6,6 +6,7 @@ import { AnalyzerWorkspace } from './components/AnalyzerWorkspace';
 import { WorkerWorkspace } from './components/WorkerWorkspace';
 import { IngestedFile } from './types';
 import { ToolCatalogModal } from './components/ToolCatalogModal';
+import { AiOrchestrationMesh } from './components/AiOrchestrationMesh';
 import { Compass, Zap, ArrowDown, ChevronDown, Sparkles, Layers, ShieldCheck, Cpu } from 'lucide-react';
 
 type AppView = 'landing' | 'analyzer-workspace' | 'worker-workspace';
@@ -333,6 +334,13 @@ export const App: React.FC = () => {
               initialPrompt={workerPrompt}
             />
           </div>
+        </section>
+
+        {/* =========================================================================
+            SECTION 4: ORCHESTRATION ENGINES & AI LOGO MESH (RESEND-STYLE)
+           ========================================================================= */}
+        <section id="orchestration-mesh" className="w-full">
+          <AiOrchestrationMesh onExploreArchitecture={() => setIsCatalogOpen(true)} />
         </section>
 
       </main>
