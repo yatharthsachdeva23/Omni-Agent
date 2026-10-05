@@ -192,7 +192,7 @@ class IntermediateReviewEngine:
                 "   - The user's primary objective.\n"
                 "4. SCORING & PASS/FAIL CRITERIA:\n"
                 "   - If the image depicts the requested target subject/object clearly and cleanly, set passed: true, status: 'approved', and quality_score between 85 and 98.\n"
-                "   - If the image is unrelated, depicts the wrong object, is a generic abstract pattern, or fails the core objective, set passed: false, status: 'rejected', and quality_score between 15 and 45.\n"
+                "   - If the image is unrelated, depicts the wrong object (e.g. a portrait when a number or object was requested), is a generic placeholder, or fails the core objective, set passed: false, status: 'rejected', and quality_score between 0 and 5. NEVER give participation points (like 20 or 30) for an image that depicts the completely wrong subject!\n"
                 "5. In your critique, explicitly state what you visually observed in the image and how it aligns with the task.\n"
                 "6. If quality_score < 85, you MUST provide 'reviewer_regenerate_prompt': A concrete, highly descriptive image generator prompt for the exact object or mathematical answer (e.g. 'cinematic 3D render of the numeral 9 sculpted in glowing gold on dark marble, studio lighting, 8k resolution').\n\n"
                 "Output MUST be valid JSON with this exact schema:\n"
@@ -232,8 +232,8 @@ class IntermediateReviewEngine:
                 "DUAL-CHANNEL SANITY RULE:\n"
                 "The deliverable shown above has been sanitized for the user. Verify that it contains no awkward internal conversational leaks to other agents (e.g. '(For the requested image, please produce...') in the user-facing text.\n\n"
                 "CRITICAL QUALITY RULES:\n"
-                "- If the worker claimed it cannot access files, refused the task, or went off-topic for this specific step, it is a CRITICAL FAILURE. "
-                "You MUST set passed: false, status: 'rejected', and quality_score between 0 and 30.\n"
+                "- If the worker claimed it cannot access files, refused the task, or went completely off-topic/wrong for this specific step, it is a TOTAL FAILURE. "
+                "You MUST set passed: false, status: 'rejected', and quality_score between 0 and 5. DO NOT give partial credit for completely incorrect or off-target outputs.\n"
                 "- If the worker executed this step partially or with flaws, set status: 'warning', and quality_score between 50 and 70.\n"
                 "- If the worker output directly fulfills what this step requested, "
                 "set passed: true, status: 'approved', and quality_score between 85 and 100.\n"
@@ -282,7 +282,7 @@ class IntermediateReviewEngine:
         system_prompt = (
             "You are the Strict Quality Reviewer for OmniTask AI.\n"
             "Evaluate whether the worker output faithfully fulfilled the task and user objective.\n"
-            "CRITICAL: If the worker said it cannot access files, refused, or output placeholder text, reject it with score < 30.\n"
+            "CRITICAL: If the worker said it cannot access files, refused, output placeholder text, or was completely wrong/off-topic, reject it with score between 0 and 5. DO NOT award participation marks for failed outputs.\n"
             "If score < 85, you MUST provide 'reviewer_regenerate_prompt': A concrete rewritten prompt for the worker to fix its output.\n"
             "Output strictly valid JSON with keys: 'passed' (bool), 'status' ('approved'|'rejected'|'warning'), 'quality_score' (int 0-100), 'critique' (str), 'recommendations' (list of str), 'reviewer_regenerate_prompt' (str or null), 'negative_knowledge_directive' (str)."
         )
@@ -414,7 +414,7 @@ class IntermediateReviewEngine:
                 step_id=step_id,
                 reviewer_model="Programmatic Quality Gate",
                 status=ReviewStatus.REJECTED,
-                quality_score=15 if has_refusal else 10,
+                quality_score=0,
                 critique=critique,
                 recommendations=["Provide raw document contents directly into worker context prompt."],
                 reviewer_regenerate_prompt=f"{task.description}. Deliver complete, direct solution without disclaimers or refusals.",
@@ -426,7 +426,7 @@ class IntermediateReviewEngine:
                 stage="programmatic_qa",
                 issue_type="input_access_refusal",
                 description="Worker reported unable to access or process attached file/context.",
-                mitigation_applied="Penalized quality score to 15% and flagged for re-extraction.",
+                mitigation_applied="Penalized quality score to 0% and flagged for re-extraction.",
                 prevention_directive_for_downstream="Downstream agents must verify prerequisite parameters before proceeding."
             )
             return review, neg
