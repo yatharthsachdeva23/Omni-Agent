@@ -47,6 +47,7 @@ class StructuredSubTask(BaseModel):
     assigned_reviewer_model: str
     required_prerequisites: List[str] = Field(default_factory=list)
     expected_output_type: str
+    retry_count: int = 0
     status: TaskStatus = TaskStatus.PENDING
 
 class StructuredGoal(BaseModel):
@@ -66,6 +67,7 @@ class WorkerResult(BaseModel):
     internal_handover: Dict[str, Any] = Field(default_factory=dict)
     artifacts: Dict[str, Any] = Field(default_factory=dict)
     execution_time_ms: float = 0.0
+    attempt: int = 1
     success: bool = True
 
 class IntermediateReviewResult(BaseModel):
@@ -75,6 +77,7 @@ class IntermediateReviewResult(BaseModel):
     quality_score: int  # 0 to 100
     critique: str
     recommendations: List[str] = Field(default_factory=list)
+    reviewer_regenerate_prompt: Optional[str] = None
     passed: bool = True
     mitigation_required: bool = False
 

@@ -18,7 +18,8 @@ import {
   ExternalLink,
   Copy,
   Check,
-  Download
+  Download,
+  AlertCircle
 } from 'lucide-react';
 import {
   StructuredGoal,
@@ -239,7 +240,9 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
       <div className="p-4 rounded-2xl bg-[#080808] border border-white/[0.08] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-white">
-            {isExecuting ? (
+            {currentStage === 'STEP_FAILED' || currentStage === 'ERROR' ? (
+              <AlertCircle className="w-4 h-4 text-red-400" />
+            ) : isExecuting ? (
               <Zap className="w-4 h-4 text-white animate-pulse" />
             ) : (
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -247,14 +250,14 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400">
+              <span className={`text-[10px] font-mono uppercase tracking-wider ${currentStage === 'STEP_FAILED' || currentStage === 'ERROR' ? 'text-red-400' : 'text-neutral-400'}`}>
                 Phase: {currentStage}
               </span>
               {isExecuting && (
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
               )}
             </div>
-            <p className="text-xs font-medium text-white">{stageMessage}</p>
+            <p className={`text-xs font-medium ${currentStage === 'STEP_FAILED' || currentStage === 'ERROR' ? 'text-red-300' : 'text-white'}`}>{stageMessage}</p>
           </div>
         </div>
 
@@ -273,6 +276,17 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
           </div>
         )}
       </div>
+
+      {/* STEP FAILURE ALERT BANNER */}
+      {currentStage === 'STEP_FAILED' && (
+        <div className="p-4 rounded-xl bg-red-500/[0.08] border border-red-500/30 flex items-start gap-3 text-red-200 text-xs">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="font-semibold block text-red-300">Execution Blocked: Maximum Retries Exceeded (5/5)</span>
+            <p className="font-mono text-[11px] text-red-300/80 leading-relaxed">{stageMessage}</p>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-1.5 border-b border-white/[0.08] pb-2">
@@ -370,10 +384,22 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                       <span className="flex items-center gap-1.5 text-[11px] text-neutral-300 font-mono px-2.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.1]">
                         <Clock className="w-3 h-3 animate-spin" /> In Progress
                       </span>
+                    ) : task.status === 'failed' ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-red-400 font-mono px-2 py-0.5 rounded bg-red-500/[0.1] border border-red-500/20">
+                          Failed (5/5 tries) &bull; {review?.quality_score ?? 0}%
+                        </span>
+                        <AlertCircle className="w-4 h-4 text-red-400" />
+                      </div>
                     ) : isCompleted ? (
                       <div className="flex items-center gap-2">
+                        {task.retry_count && task.retry_count > 0 ? (
+                          <span className="text-[10px] text-amber-400 font-mono px-2 py-0.5 rounded bg-amber-500/[0.1] border border-amber-500/20">
+                            {task.retry_count + 1}/5 tries
+                          </span>
+                        ) : null}
                         <span className="text-[10px] text-emerald-400 font-mono px-2 py-0.5 rounded bg-emerald-500/[0.08] border border-emerald-500/20">
-                          Gemini QA {review?.quality_score}%
+                          {review?.reviewer_model ? review.reviewer_model.split(' ')[0] : 'Gemini'} QA {review?.quality_score}%
                         </span>
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                       </div>
@@ -408,7 +434,11 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                       return (
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-[11px] text-neutral-500 font-mono">
-                            <span>Output ({output.worker_model}) &bull; {output.execution_time_ms} ms</span>
+                            <span>
+                              Output ({output.worker_model})
+                              {output.attempt && output.attempt > 1 ? ` • Attempt ${output.attempt}/5 ` : ''}
+                              &bull; {output.execution_time_ms} ms
+                            </span>
                             <div className="flex items-center gap-1.5">
                               <button
                                 onClick={() =>
@@ -493,23 +523,40 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                       );
                     })()}
 
-                    {/* Dedicated Gemini Review Inspection Card */}
+                    {/* Dedicated Reviewer Inspection Card */}
                     {review && (
-                      <div className="p-3.5 rounded-xl bg-white/[0.02] border border-emerald-500/30 space-y-1.5">
+                      <div className={`p-3.5 rounded-xl bg-white/[0.02] border ${review.quality_score >= 85 ? 'border-emerald-500/30' : 'border-amber-500/40'} space-y-2`}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                            <span className="text-[11px] font-mono font-medium text-emerald-400 uppercase tracking-wider">
+                            <ShieldCheck className={`w-3.5 h-3.5 ${review.quality_score >= 85 ? 'text-emerald-400' : 'text-amber-400'}`} />
+                            <span className={`text-[11px] font-mono font-medium ${review.quality_score >= 85 ? 'text-emerald-400' : 'text-amber-400'} uppercase tracking-wider`}>
                               Dedicated Reviewer Gate: {review.reviewer_model}
                             </span>
                           </div>
-                          <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                            Score: {review.quality_score}/100
-                          </span>
+                          <div className="flex items-center gap-2">
+                            {review.quality_score < 85 && (
+                              <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                Minimum 85% Required
+                              </span>
+                            )}
+                            <span className={`text-[10px] font-mono ${review.quality_score >= 85 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' : 'text-amber-300 bg-amber-500/10 border-amber-500/20'} px-2 py-0.5 rounded border`}>
+                              Score: {review.quality_score}/100 ({review.status ? review.status.toUpperCase() : (review.quality_score >= 85 ? 'APPROVED' : 'REJECTED')})
+                            </span>
+                          </div>
                         </div>
                         <p className="text-xs text-neutral-300 font-mono whitespace-pre-wrap">
                           {review.critique}
                         </p>
+                        {review.reviewer_regenerate_prompt && (
+                          <div className="mt-2 p-3 rounded-lg bg-amber-500/[0.06] border border-amber-500/20 space-y-1">
+                            <span className="text-[10px] font-mono text-amber-400 uppercase tracking-wider font-semibold block">
+                              Reviewer Corrective Prompt (Used for Auto-Regeneration):
+                            </span>
+                            <p className="text-xs text-amber-200/90 font-mono leading-relaxed">
+                              {review.reviewer_regenerate_prompt}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

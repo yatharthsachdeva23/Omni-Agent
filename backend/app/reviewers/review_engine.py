@@ -193,7 +193,8 @@ class IntermediateReviewEngine:
                 "4. SCORING & PASS/FAIL CRITERIA:\n"
                 "   - If the image depicts the requested target subject/object clearly and cleanly, set passed: true, status: 'approved', and quality_score between 85 and 98.\n"
                 "   - If the image is unrelated, depicts the wrong object, is a generic abstract pattern, or fails the core objective, set passed: false, status: 'rejected', and quality_score between 15 and 45.\n"
-                "5. In your critique, explicitly state what you visually observed in the image and how it aligns with the task.\n\n"
+                "5. In your critique, explicitly state what you visually observed in the image and how it aligns with the task.\n"
+                "6. If quality_score < 85, you MUST provide 'reviewer_regenerate_prompt': A concrete, highly descriptive image generator prompt for the exact object or mathematical answer (e.g. 'cinematic 3D render of the numeral 9 sculpted in glowing gold on dark marble, studio lighting, 8k resolution').\n\n"
                 "Output MUST be valid JSON with this exact schema:\n"
                 "{\n"
                 '  "passed": boolean,\n'
@@ -201,6 +202,7 @@ class IntermediateReviewEngine:
                 '  "quality_score": integer (0 to 100),\n'
                 '  "critique": "Explicit visual observation and quality critique",\n'
                 '  "recommendations": ["Recommendation 1", ...],\n'
+                '  "reviewer_regenerate_prompt": "Concrete prompt for the worker to regenerate with if score < 85, or null if >= 85",\n'
                 '  "negative_knowledge_directive": "Directive for downstream agents"\n'
                 "}"
             )
@@ -234,7 +236,8 @@ class IntermediateReviewEngine:
                 "You MUST set passed: false, status: 'rejected', and quality_score between 0 and 30.\n"
                 "- If the worker executed this step partially or with flaws, set status: 'warning', and quality_score between 50 and 70.\n"
                 "- If the worker output directly fulfills what this step requested, "
-                "set passed: true, status: 'approved', and quality_score between 85 and 100.\n\n"
+                "set passed: true, status: 'approved', and quality_score between 85 and 100.\n"
+                "- If quality_score < 85, you MUST provide 'reviewer_regenerate_prompt': Exact rewritten instructions or prompt the worker should execute to correct flaws.\n\n"
                 "Output MUST be valid JSON with this exact schema:\n"
                 "{\n"
                 '  "passed": boolean,\n'
@@ -242,6 +245,7 @@ class IntermediateReviewEngine:
                 '  "quality_score": integer (0 to 100),\n'
                 '  "critique": "Detailed critique explaining strengths or failures",\n'
                 '  "recommendations": ["Recommendation 1", ...],\n'
+                '  "reviewer_regenerate_prompt": "Corrective prompt for worker to re-run if score < 85, or null if >= 85",\n'
                 '  "negative_knowledge_directive": "Avoidance directive for downstream agents"\n'
                 "}"
             )
@@ -279,7 +283,8 @@ class IntermediateReviewEngine:
             "You are the Strict Quality Reviewer for OmniTask AI.\n"
             "Evaluate whether the worker output faithfully fulfilled the task and user objective.\n"
             "CRITICAL: If the worker said it cannot access files, refused, or output placeholder text, reject it with score < 30.\n"
-            "Output strictly valid JSON with keys: 'passed' (bool), 'status' ('approved'|'rejected'|'warning'), 'quality_score' (int 0-100), 'critique' (str), 'recommendations' (list of str), 'negative_knowledge_directive' (str)."
+            "If score < 85, you MUST provide 'reviewer_regenerate_prompt': A concrete rewritten prompt for the worker to fix its output.\n"
+            "Output strictly valid JSON with keys: 'passed' (bool), 'status' ('approved'|'rejected'|'warning'), 'quality_score' (int 0-100), 'critique' (str), 'recommendations' (list of str), 'reviewer_regenerate_prompt' (str or null), 'negative_knowledge_directive' (str)."
         )
         user_msg = (
             f"User Objective: {primary_objective or task.description}\n"
@@ -317,15 +322,14 @@ class IntermediateReviewEngine:
             if isinstance(eval_data, list) and len(eval_data) > 0:
                 eval_data = eval_data[0]
 
-            is_passed = bool(eval_data.get("passed", True))
             score = int(eval_data.get("quality_score", 70))
             status_raw = str(eval_data.get("status", "approved")).lower()
 
-            if not is_passed or score < 50 or "reject" in status_raw:
-                review_status = ReviewStatus.REJECTED
-                is_passed = False
-            elif "warn" in status_raw or score < 75:
-                review_status = ReviewStatus.WARNING
+            # Strict 85% Quality Gate: Must achieve >= 85% to pass
+            is_passed = (score >= 85) and ("reject" not in status_raw) and bool(eval_data.get("passed", True))
+
+            if not is_passed:
+                review_status = ReviewStatus.REJECTED if score < 70 else ReviewStatus.WARNING
             else:
                 review_status = ReviewStatus.APPROVED
 
@@ -333,6 +337,20 @@ class IntermediateReviewEngine:
             recs = eval_data.get("recommendations", ["Ensure all input requirements are met."])
             if not isinstance(recs, list):
                 recs = [str(recs)]
+
+            regen_prompt = eval_data.get("reviewer_regenerate_prompt")
+            if isinstance(regen_prompt, str) and regen_prompt.strip():
+                regen_prompt = regen_prompt.strip()
+            else:
+                regen_prompt = None
+
+            # Fallback if reviewer flagged failure but omitted regenerate prompt
+            if not is_passed and not regen_prompt:
+                if recs and len(recs) > 0 and len(str(recs[0])) > 5:
+                    regen_prompt = f"{task.description}. Specifically address: {recs[0]}"
+                else:
+                    clean_critique = re.sub(r'["\']', '', critique)[:150]
+                    regen_prompt = f"{task.description}. Rectify flaw: {clean_critique}"
 
             directive = str(eval_data.get("negative_knowledge_directive", "Downstream agents must verify prerequisite parameters."))
 
@@ -343,8 +361,9 @@ class IntermediateReviewEngine:
                 quality_score=score,
                 critique=critique,
                 recommendations=recs,
+                reviewer_regenerate_prompt=regen_prompt,
                 passed=is_passed,
-                mitigation_required=(not is_passed or review_status == ReviewStatus.WARNING)
+                mitigation_required=(not is_passed)
             )
 
             neg = NegativeKnowledgeItem(
@@ -398,6 +417,7 @@ class IntermediateReviewEngine:
                 quality_score=15 if has_refusal else 10,
                 critique=critique,
                 recommendations=["Provide raw document contents directly into worker context prompt."],
+                reviewer_regenerate_prompt=f"{task.description}. Deliver complete, direct solution without disclaimers or refusals.",
                 passed=False,
                 mitigation_required=True
             )
@@ -424,7 +444,8 @@ class IntermediateReviewEngine:
                     quality_score=60,
                     critique=critique,
                     recommendations=["Enclose all implementation code in valid language-tagged markdown code blocks."],
-                    passed=True,
+                    reviewer_regenerate_prompt=f"{task.description}. Deliver complete standalone implementation enclosed inside ``` markdown code blocks.",
+                    passed=False,
                     mitigation_required=True
                 )
                 neg = NegativeKnowledgeItem(
@@ -478,6 +499,7 @@ class IntermediateReviewEngine:
                     quality_score=25,
                     critique=critique,
                     recommendations=["Fix syntax errors and ensure code conforms to target language standards."],
+                    reviewer_regenerate_prompt=f"{task.description}. Fix syntax errors: {err_summary}",
                     passed=False,
                     mitigation_required=True
                 )
@@ -506,6 +528,7 @@ class IntermediateReviewEngine:
                 quality_score=score,
                 critique=critique,
                 recommendations=["Verify execution against edge-case inputs."],
+                reviewer_regenerate_prompt=None,
                 passed=True,
                 mitigation_required=False
             )
@@ -527,6 +550,7 @@ class IntermediateReviewEngine:
                     quality_score=94,
                     critique=critique,
                     recommendations=["Ensure image embeds render seamlessly across desktop and mobile."],
+                    reviewer_regenerate_prompt=None,
                     passed=True,
                     mitigation_required=False
                 )
@@ -540,6 +564,7 @@ class IntermediateReviewEngine:
                     quality_score=45,
                     critique=critique,
                     recommendations=["Regenerate visual asset with direct Pollinations/Flux render link."],
+                    reviewer_regenerate_prompt=f"Generate a high-fidelity visual asset depicting: {task.description}",
                     passed=False,
                     mitigation_required=True
                 )
@@ -564,14 +589,16 @@ class IntermediateReviewEngine:
                 f"- Structure: {'Well-structured markdown with section hierarchy' if has_structure else 'Standard prose format'}\n"
                 f"- Telemetry: Output registered to Common Context Blackboard."
             )
+            is_passed = score >= 85
             review = IntermediateReviewResult(
                 step_id=step_id,
-                reviewer_model="Programmatic Analytical Reviewer",
-                status=ReviewStatus.APPROVED if score >= 70 else ReviewStatus.WARNING,
-                quality_score=min(97, max(40, score)),
+                reviewer_model="Programmatic QA Evaluator",
+                status=ReviewStatus.APPROVED if is_passed else ReviewStatus.WARNING,
+                quality_score=score,
                 critique=critique,
-                recommendations=["Synthesize findings into final deliverables summary."],
-                passed=(score >= 70),
-                mitigation_required=(score < 70)
+                recommendations=["Ground assertions directly in session source artifacts."],
+                reviewer_regenerate_prompt=None if is_passed else f"{task.description}. Expand analysis and provide complete structured deliverable.",
+                passed=is_passed,
+                mitigation_required=(not is_passed)
             )
             return review, None

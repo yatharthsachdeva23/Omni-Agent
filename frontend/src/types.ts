@@ -16,6 +16,7 @@ export interface StructuredSubTask {
   assigned_reviewer_model: string;
   required_prerequisites: string[];
   expected_output_type: string;
+  retry_count?: number;
   status: TaskStatus;
 }
 
@@ -37,6 +38,7 @@ export interface WorkerResult {
   internal_handover?: Record<string, any>;
   artifacts: Record<string, any>;
   execution_time_ms: number;
+  attempt?: number;
   success: boolean;
 }
 
@@ -47,6 +49,7 @@ export interface IntermediateReviewResult {
   quality_score: number;
   critique: string;
   recommendations: string[];
+  reviewer_regenerate_prompt?: string;
   passed: boolean;
   mitigation_required: boolean;
 }

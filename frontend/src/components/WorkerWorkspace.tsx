@@ -166,7 +166,10 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
       setStageMessage(`Worker: ${data.assigned_worker || 'Specialist'} executing '${data.title}'...`);
     } else if (eventName === 'STEP_RETRY_INITIATED') {
       setCurrentStage('EXECUTING');
-      setStageMessage(`Auto-Correction: ${data.rejection_critique || 'Refining deliverable'}...`);
+      setStageMessage(`Auto-Correction (Attempt ${data.attempt || 1}/${data.max_attempts || 5}): ${data.rejection_critique || 'Refining deliverable'}...`);
+    } else if (eventName === 'STEP_MAX_RETRIES_EXCEEDED') {
+      setCurrentStage('STEP_FAILED');
+      setStageMessage(data.error_message || `Step failed to achieve 85% score after ${data.attempts || 5} attempts.`);
     } else if (eventName === 'INTERMEDIATE_REVIEW_COMPLETED') {
       if (data.blackboard_snapshot) {
         setBlackboard(data.blackboard_snapshot);

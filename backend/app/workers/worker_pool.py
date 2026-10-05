@@ -60,7 +60,9 @@ class WorkerPool:
     async def execute_task(
         self,
         task: StructuredSubTask,
-        blackboard_context: Dict[str, Any]
+        blackboard_context: Dict[str, Any],
+        override_prompt: Optional[str] = None,
+        attempt: int = 1
     ) -> WorkerResult:
         start_time = time.perf_counter()
         domain = task.domain
@@ -88,25 +90,26 @@ class WorkerPool:
         # Route to specialist sub-agent with full Common Context Blackboard continuity
         is_creative_writing = any(w in task.title.lower() or w in task.description.lower() for w in ["poem", "poetry", "rhyme", "sonnet", "ballad", "creative story", "lyrics", "haiku"])
         if is_creative_writing:
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
         elif domain == DomainType.CODE or "qwen" in assigned_model.lower():
-            result = await self._run_qwen_coder(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
+            result = await self._run_qwen_coder(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
         elif "summary" in task.title.lower() or "gemini" in assigned_model.lower():
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
         elif domain in [DomainType.MATH, "legal_logic"] or "mistral" in assigned_model.lower():
-            result = await self._run_mistral_logic(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
+            result = await self._run_mistral_logic(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
         elif domain == DomainType.VISION or "flux" in assigned_model.lower():
-            result = await self._run_flux_visual(task, objective, prior_outputs, avoidance_rules, cumulative_handovers)
+            result = await self._run_flux_visual(task, objective, prior_outputs, avoidance_rules, cumulative_handovers, override_prompt)
         elif "openai" in assigned_model.lower() or domain == DomainType.AUDIT:
-            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
+            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
         else:
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         result.execution_time_ms = round(elapsed_ms + 180.0, 1)
         result.worker_model = assigned_model
         result.step_id = step_id
         result.domain = domain
+        result.attempt = attempt
 
         # Universal Dual-Channel Output Separation & Inter-Agent Handover Extraction
         clean_user_deliverable, handover = extract_and_sanitize_handover(
@@ -128,8 +131,9 @@ class WorkerPool:
         return result
 
     # 1. CODING SPECIALIST: Qwen 2.5 Coder (Groq -> Gemini -> OpenRouter -> Dynamic Generator)
-    async def _run_qwen_coder(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None) -> WorkerResult:
+    async def _run_qwen_coder(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None) -> WorkerResult:
         prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
+        override_note = f"\n\n[REVIEWER CORRECTION PROMPT]:\n{override_prompt}\n" if override_prompt else ""
         system_prompt = (
             "You are Qwen 2.5 Coder, the elite polyglot software engineering specialist for OmniTask AI.\n"
             "Analyze the task objective and requirements carefully.\n"
@@ -147,7 +151,7 @@ class WorkerPool:
         user_msg = (
             f"Task: {task.title}\n"
             f"Description: {task.description}\n"
-            f"Objective: {objective}{attached_files_text}{prior_context}\n\n"
+            f"Objective: {objective}{override_note}{attached_files_text}{prior_context}\n\n"
             "Deliver the complete, standalone code implementation directly in markdown code blocks."
         )
 
@@ -457,8 +461,9 @@ if __name__ == "__main__":
         )
 
     # 2. SUMMARIZER SPECIALIST: Gemini 2.0 Flash (Gemini -> Groq -> OpenRouter -> Dynamic Synthesizer)
-    async def _run_gemini_summarizer(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None) -> WorkerResult:
+    async def _run_gemini_summarizer(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None) -> WorkerResult:
         prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
+        override_note = f"\n\n[REVIEWER CORRECTION PROMPT]:\n{override_prompt}\n" if override_prompt else ""
         is_secrecy = any(w in objective.lower() for w in [
             "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
             "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
@@ -477,7 +482,7 @@ if __name__ == "__main__":
 
         prompt_text = (
             f"You are the Gemini Summarizer & Creative Specialist for OmniTask AI.\n"
-            f"Task: {task.title}\nObjective: {objective}\n"
+            f"Task: {task.title}\nObjective: {objective}{override_note}\n"
             f"{prior_context}\n"
             f"{attached_files_text}{secrecy_rule}\n\n"
             "MULTI-AGENT COLLABORATION DIRECTIVE:\n"
@@ -569,9 +574,10 @@ if __name__ == "__main__":
         )
 
     # 3. LOGIC & MATH SPECIALIST: Mistral (OpenRouter -> Gemini -> Groq -> Dynamic Derivation)
-    async def _run_mistral_logic(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None) -> WorkerResult:
+    async def _run_mistral_logic(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None) -> WorkerResult:
         prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
-        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{attached_files_text}{prior_context}"
+        override_note = f"\n\n[REVIEWER CORRECTION PROMPT]:\n{override_prompt}\n" if override_prompt else ""
+        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{override_note}{attached_files_text}{prior_context}"
         sys_msg = (
             "You are the Mistral Legal & Formal Logic Specialist for OmniTask AI. Evaluate regulatory constraints, deductive validity, and mathematical derivations.\n"
             "MULTI-AGENT CONTINUITY DIRECTIVE:\n"
@@ -655,22 +661,28 @@ if __name__ == "__main__":
         )
 
     # 4. AUDITOR & EXAM/DOCUMENT SPECIALIST: OpenAI GPT (OpenRouter -> Gemini -> Groq -> Dynamic Auditor)
-    async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None) -> WorkerResult:
+    async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None) -> WorkerResult:
         prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
+        override_note = f"\n\n[REVIEWER CORRECTION PROMPT]:\n{override_prompt}\n" if override_prompt else ""
         is_secrecy = any(w in objective.lower() for w in [
             "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
             "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
             "riddle", "guess", "spoiler", "secret"
-        ])
+        ]) or (any(w in objective.lower() for w in ["math", "calculation", "number"]) and any(w in objective.lower() for w in ["image", "picture"]))
         secrecy_rule = ""
         if is_secrecy:
             secrecy_rule = (
-                "\n\nCRITICAL RULE FOR RIDDLES / GUESSING GAMES:\n"
-                "- The user requested a riddle, puzzle, or guessing game where the answer must NOT be revealed in the chat or text.\n"
-                "- You MUST NOT write, state, or hint at the answer in your visible output text under any circumstances!\n"
-                "- NEVER write notes like '(For the requested image, please produce a picture of X)' or 'Answer: X' in your visible text.\n"
-                "- Pass the chosen secret object inside <agent_handover>{\"target_subject\": \"object_name\", \"secret_answer\": \"object_name\"}</agent_handover> at the very end.\n"
-                "- The rest of your deliverable must contain strictly the riddle, clues, and pointers, keeping the user in full suspense!"
+                "\n\nCRITICAL MANDATORY PROTOCOL FOR RIDDLES / MATH CALCULATION TRICKS / SECRET NUMBER PUZZLES:\n"
+                "- The user requested a riddle, puzzle, or math calculation sequence where the answer must NOT be revealed in the chat or text.\n"
+                "- You MUST NOT write, state, or hint at the final number or answer in your visible output text under any circumstances!\n"
+                "- HOWEVER, YOU MUST INTERNALLY COMPUTE AND SOLVE THE EXACT FINAL ANSWER (for example, if the 6 calculations reduce to 9, the answer is 9).\n"
+                "- You MUST pass this exact calculated answer and visual asset description inside <agent_handover> at the very end of your response:\n"
+                "  <agent_handover>{\n"
+                '    "target_subject": "cinematic 3D render of the number 9",\n'
+                '    "secret_answer": "9",\n'
+                '    "recommended_image_prompt": "cinematic 3D render of the numeral 9 sculpted in glowing gold on dark obsidian marble, studio lighting, 8k resolution"\n'
+                "  }</agent_handover>\n"
+                "- The rest of your deliverable must contain strictly the riddle and calculation steps, keeping the user in full suspense!"
             )
 
         system_content = (
@@ -687,7 +699,7 @@ if __name__ == "__main__":
             "audits, summaries, or analyses). Do NOT say you cannot access files or attachments."
             f"{secrecy_rule}"
         )
-        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}\n{prior_context}{attached_files_text}"
+        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{override_note}\n{prior_context}{attached_files_text}"
 
         # 1. Try OpenRouter (GPT-4o-mini)
         if self.openrouter_key:
@@ -809,16 +821,26 @@ if __name__ == "__main__":
         if cumulative_handovers:
             for prev_id, h_data in cumulative_handovers.items():
                 if isinstance(h_data, dict):
+                    if h_data.get("recommended_image_prompt"):
+                        return str(h_data["recommended_image_prompt"]).strip()
                     if h_data.get("target_subject"):
                         return str(h_data["target_subject"]).strip()
                     if h_data.get("secret_answer"):
-                        return str(h_data["secret_answer"]).strip()
+                        ans = str(h_data["secret_answer"]).strip()
+                        if ans.isdigit():
+                            return f"cinematic 3D render of the numeral {ans} sculpted in glowing gold on dark marble"
+                        return ans
 
         # 1. Check if any prior output explicitly saved a secret_answer or visual_subject artifact
         for prev_id, prev_data in prior_outputs.items():
             artifacts = prev_data.get("artifacts", {})
+            if artifacts.get("recommended_image_prompt"):
+                return str(artifacts["recommended_image_prompt"]).strip()
             if artifacts.get("secret_answer"):
-                return str(artifacts["secret_answer"]).strip()
+                ans = str(artifacts["secret_answer"]).strip()
+                if ans.isdigit():
+                    return f"cinematic 3D render of the numeral {ans} sculpted in glowing gold on dark marble"
+                return ans
             if artifacts.get("visual_subject"):
                 return str(artifacts["visual_subject"]).strip()
 
@@ -827,7 +849,10 @@ if __name__ == "__main__":
             full_text = prev_data.get("full_output", "")
             m_tag = re.search(r"<secret_answer>\s*(.*?)\s*</secret_answer>", full_text, flags=re.IGNORECASE)
             if m_tag:
-                return m_tag.group(1).strip()
+                ans = m_tag.group(1).strip()
+                if ans.isdigit():
+                    return f"cinematic 3D render of the numeral {ans} sculpted in glowing gold on dark marble"
+                return ans
             m_note = re.search(r"(?:produce|make|generate)\s+(?:a|an)?\s*(?:picture|image|photo)\s+of\s+(?:a\s+|an\s+)?([a-zA-Z0-9\s_-]+?)(?:\.|\))", full_text, flags=re.IGNORECASE)
             if m_note:
                 ans = m_note.group(1).strip().rstrip(".)")
@@ -837,12 +862,16 @@ if __name__ == "__main__":
         # 3. If task description or title refers to a prior step, riddle, secret object, or solution:
         is_dependent = any(w in raw_text.lower() or w in task.title.lower() for w in [
             "secret object", "chosen object", "riddle answer", "visual solution", "answer object",
-            "the object", "from step_", "prior step", "solution", "riddle"
+            "the object", "from step_", "prior step", "solution", "riddle", "calculation", "number", "math"
+        ])
+        is_placeholder = any(w in subject.lower() for w in [
+            "final_answer_image", "final answer image", "solution_asset", "riddle_answer",
+            "visual solution", "secret object", "chosen object", "the object", "answer object"
         ])
 
-        if is_dependent and prior_outputs:
+        if (is_dependent or is_placeholder) and prior_outputs:
             extracted = await self._llm_extract_visual_subject(task, objective, prior_outputs)
-            if extracted:
+            if extracted and not any(w in extracted.lower() for w in ["final_answer", "solution_asset", "visual_solution"]):
                 return extracted
 
         # 4. Standard subject cleanup (strip conversational phrases)
@@ -860,10 +889,10 @@ if __name__ == "__main__":
         for pat in strip_patterns:
             subject = re.sub(pat, "", subject, flags=re.IGNORECASE).strip()
 
-        if not subject or len(subject) < 3 or any(w in subject.lower() for w in ["the secret object", "secret object", "riddle answer", "visual solution"]):
+        if not subject or len(subject) < 3 or is_placeholder:
             if prior_outputs:
                 extracted = await self._llm_extract_visual_subject(task, objective, prior_outputs)
-                if extracted:
+                if extracted and not any(w in extracted.lower() for w in ["final_answer", "solution_asset", "visual_solution"]):
                     return extracted
             subject = objective.strip()
 
@@ -880,10 +909,12 @@ if __name__ == "__main__":
             f"User Goal: {objective}\n"
             f"Current Image Task: {task.title} - {task.description}\n"
             f"Preceding Step Outputs:\n{context_str}\n\n"
-            "Task: Identify the exact concrete physical object, item, character, or scene that needs to be generated as an image.\n"
-            "For example, if the previous step wrote a riddle about a pen, output 'a classic fountain pen'.\n"
-            "If it wrote a riddle about a clock, output 'an ornate vintage clock'.\n"
-            "Return ONLY the concise visual subject/scene (2 to 8 words) suitable for an image generator prompt. Do NOT include explanations, quotes, or markdown."
+            "Task: Identify the exact concrete physical object, item, character, number, or scene that needs to be generated as an image.\n"
+            "- If the preceding step created a math trick, calculation puzzle, or formula (e.g. think of X, multiply by 2, add 6, divide by 2, subtract X, multiply by 3), "
+            "YOU MUST MATHEMATICALLY CALCULATE THE EXACT FINAL VALUE! For example, ((X*2 + 6)/2 - X)*3 = 9. Output a visual prompt like 'cinematic 3D render of the bold numeral 9 sculpted in glowing gold'.\n"
+            "- If the previous step wrote a riddle about a pen, output 'a classic vintage fountain pen'.\n"
+            "- If it wrote a riddle about a clock, output 'an ornate vintage clock'.\n"
+            "CRITICAL: NEVER return generic words or placeholders like 'final_answer_image', 'math_solution', 'visual_solution', 'the object', or 'solution asset'! Return ONLY a concrete, descriptive visual subject suitable for an image generator prompt (2 to 10 words). Do NOT include explanations, quotes, or markdown."
         )
 
         if self.gemini_key:
@@ -927,34 +958,41 @@ if __name__ == "__main__":
         return None
 
     # 5. VISUAL ASSET SPECIALIST: Flux.1 (Live Synthesis & Dynamic Subject Fallback)
-    async def _run_flux_visual(self, task, objective, prior_outputs, avoidance_rules, cumulative_handovers=None) -> WorkerResult:
+    async def _run_flux_visual(self, task, objective, prior_outputs, avoidance_rules, cumulative_handovers=None, override_prompt=None) -> WorkerResult:
         from pathlib import Path
         import uuid
 
         raw_text = task.description or objective
-        # Intelligently resolve the exact physical subject from task, objective, and prior outputs
-        subject = await self._resolve_visual_subject(task, objective, prior_outputs, cumulative_handovers)
-
-        # Detect aspect ratio preferences
-        sub_lower = f"{raw_text} {objective}".lower()
-        if "9:16" in sub_lower or "portrait" in sub_lower or "mobile" in sub_lower:
-            width, height = 768, 1344
-            aspect_ratio = "9:16"
-        elif "1:1" in sub_lower or "square" in sub_lower:
-            width, height = 768, 768
-            aspect_ratio = "1:1"
-        else:
+        # If reviewer gave a concrete regenerate prompt, use it directly!
+        if override_prompt and len(override_prompt.strip()) > 3:
+            subject = override_prompt.strip()
+            clean_prompt = override_prompt.strip()
             width, height = 1024, 576
             aspect_ratio = "16:9"
-
-        # Discern between diagram/infographic vs creative/photorealistic
-        is_diagram = any(w in subject.lower() for w in ["diagram", "chart", "infographic", "architecture", "flowchart", "schematic", "blueprint"])
-        if is_diagram:
-            clean_prompt = f"Professional clean technical infographic diagram of {subject}, modern typography, crisp minimalist vector detailing"
-        elif len(subject.split()) <= 2:
-            clean_prompt = f"a high-quality studio photograph of a {subject}, cinematic lighting, sharp focus, beautiful depth of field, 8k resolution"
         else:
-            clean_prompt = f"{subject}, cinematic photorealism, beautiful lighting, sharp focus, aesthetic composition, 8k resolution"
+            # Intelligently resolve the exact physical subject from task, objective, and prior outputs
+            subject = await self._resolve_visual_subject(task, objective, prior_outputs, cumulative_handovers)
+
+            # Detect aspect ratio preferences
+            sub_lower = f"{raw_text} {objective}".lower()
+            if "9:16" in sub_lower or "portrait" in sub_lower or "mobile" in sub_lower:
+                width, height = 768, 1344
+                aspect_ratio = "9:16"
+            elif "1:1" in sub_lower or "square" in sub_lower:
+                width, height = 768, 768
+                aspect_ratio = "1:1"
+            else:
+                width, height = 1024, 576
+                aspect_ratio = "16:9"
+
+            # Discern between diagram/infographic vs creative/photorealistic
+            is_diagram = any(w in subject.lower() for w in ["diagram", "chart", "infographic", "architecture", "flowchart", "schematic", "blueprint"])
+            if is_diagram:
+                clean_prompt = f"Professional clean technical infographic diagram of {subject}, modern typography, crisp minimalist vector detailing"
+            elif len(subject.split()) <= 2:
+                clean_prompt = f"a high-quality studio photograph of a {subject}, cinematic lighting, sharp focus, beautiful depth of field, 8k resolution"
+            else:
+                clean_prompt = f"{subject}, cinematic photorealism, beautiful lighting, sharp focus, aesthetic composition, 8k resolution"
 
         encoded_prompt = urllib.parse.quote(clean_prompt)
         external_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true&seed=42"

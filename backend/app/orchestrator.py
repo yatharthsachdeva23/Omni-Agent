@@ -138,31 +138,53 @@ class OmniOrchestrator:
             )
 
             # Autonomous Self-Correction Loop:
-            # If reviewer rejected deliverable (score < 45 or passed=False), attempt 1 auto-correction
-            if (not review_result.passed or review_result.quality_score < 45):
-                critique_note = review_result.critique or "Quality check failed."
-                retry_avoidance = f"SELF-CORRECTION DIRECTIVE: Reviewer rejected prior attempt. Issue: {critique_note}. Rectify this strictly."
+            # If reviewer marks score < 85% or passed is False, regenerate with new prompt from reviewer (max 5 times)
+            attempt = 1
+            max_attempts = 5
+            task.retry_count = 0
+
+            while (review_result.quality_score < 85 or not review_result.passed) and attempt < max_attempts:
+                attempt += 1
+                task.retry_count = attempt - 1
+                critique_note = review_result.critique or "Quality score fell below required 85% threshold."
+                regen_prompt = review_result.reviewer_regenerate_prompt or f"{task.description}. Specifically rectify: {critique_note}"
+
+                retry_avoidance = f"SELF-CORRECTION ATTEMPT {attempt}/{max_attempts}: Prior attempt scored {review_result.quality_score}%. Reviewer critique: {critique_note}. Regenerate strictly following: {regen_prompt}"
                 if "negative_knowledge_avoidance_rules" not in context_packet:
                     context_packet["negative_knowledge_avoidance_rules"] = []
                 context_packet["negative_knowledge_avoidance_rules"].append(retry_avoidance)
 
+                if negative_knowledge:
+                    blackboard.append_negative_knowledge(negative_knowledge)
+
                 yield self._format_sse("STEP_RETRY_INITIATED", {
                     "step_id": step_id,
                     "title": task.title,
-                    "rejection_critique": critique_note,
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
                     "quality_score": review_result.quality_score,
-                    "action": "Autonomous self-correction: Re-executing sub-agent with reviewer critique applied..."
+                    "rejection_critique": critique_note,
+                    "reviewer_prompt": regen_prompt,
+                    "action": f"Auto-correction {attempt}/{max_attempts}: Regenerating with Reviewer prompt..."
                 })
 
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.6)
 
-                worker_result = await self.worker_pool.execute_task(task, context_packet)
+                # Re-execute worker using the new prompt from the reviewer
+                worker_result = await self.worker_pool.execute_task(
+                    task,
+                    context_packet,
+                    override_prompt=regen_prompt,
+                    attempt=attempt
+                )
                 yield self._format_sse("WORKER_COMPLETED", {
                     "step_id": step_id,
                     "worker_result": worker_result.model_dump(),
-                    "is_retry": True
+                    "is_retry": True,
+                    "attempt": attempt
                 })
 
+                # Re-review deliverable
                 review_result, negative_knowledge = await self.review_engine.review_task(
                     task,
                     worker_result,
@@ -170,6 +192,20 @@ class OmniOrchestrator:
                     prior_outputs=context_packet.get("cumulative_prior_outputs", {}),
                     cumulative_handovers=context_packet.get("cumulative_handovers", {})
                 )
+
+            # If work is still not done (< 85%) after 5 tries, emit error message
+            if review_result.quality_score < 85 or not review_result.passed:
+                task.status = TaskStatus.FAILED
+                error_msg = f"ERROR: Step '{task.title}' failed to achieve 85% quality score after {max_attempts} attempts. Final score: {review_result.quality_score}%. Critique: {review_result.critique}"
+                yield self._format_sse("STEP_MAX_RETRIES_EXCEEDED", {
+                    "step_id": step_id,
+                    "title": task.title,
+                    "attempts": max_attempts,
+                    "final_score": review_result.quality_score,
+                    "error_message": error_msg
+                })
+            else:
+                task.status = TaskStatus.COMPLETED
 
             # Commit to Blackboard
             blackboard.record_worker_output(step_id, worker_result)
