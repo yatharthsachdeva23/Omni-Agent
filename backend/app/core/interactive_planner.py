@@ -121,7 +121,7 @@ class InteractivePlannerAgent:
         return None
 
     async def _call_gemini_planner(self, prompt: str, files_context: str) -> Optional[InteractivePlanResponse]:
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={self.gemini_key}"
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}"
         prompt_instruction = (
             "You are the Lead Solutions Architect for OmniTask AI. Formulate an implementation plan and clarifying questions.\n"
             f"User Request: \"{prompt}\"\nAttached Files:\n{files_context}\n\n"

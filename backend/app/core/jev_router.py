@@ -23,8 +23,8 @@ class JevFastRouter:
         
         # Exact model lineup:
         self.worker_dispatch_table = {
-            "code": "Qwen 3.8 27B (via Groq Cloud)",
-            "summary": "Gemini 3.5 Flash (Summarizer Specialist)",
+            "code": "Qwen 2.5 Coder (via Groq Cloud)",
+            "summary": "Gemini 2.0 Flash (Summarizer Specialist)",
             "legal_logic": "Mistral (Legal & Formal Logic Specialist)",
             "audit": "OpenAI GPT (Auditing Specialist)",
             "vision": "Flux.1 (Visual Asset Specialist)",
@@ -32,7 +32,7 @@ class JevFastRouter:
         }
 
         # Gemini is ALWAYS and EXCLUSIVELY used for reviewing:
-        self.dedicated_reviewer = "Gemini 3.5 Flash (Multimodal & Step QA Reviewer)"
+        self.dedicated_reviewer = "Gemini 2.0 Flash (Multimodal & Step QA Reviewer)"
 
     async def route_plan_async(self, structured_goal: StructuredGoal) -> StructuredGoal:
         """

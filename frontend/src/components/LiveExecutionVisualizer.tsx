@@ -48,12 +48,24 @@ interface FileDownloadInfo {
   extension: string;
 }
 
+export const sanitizeDisplayOutput = (text: string): string => {
+  if (!text) return '';
+  return text
+    .replace(/<\s*(?:agent[-_]?)?handover\s*>[\s\S]*?(?:<\s*\/?\s*(?:agent[-_]?)?handover\s*>|$)/gi, '')
+    .replace(/<\s*\/?\s*(?:agent[-_]?)?handover\s*>/gi, '')
+    .replace(/<\s*secret[-_]?answer\s*>[\s\S]*?(?:<\s*\/?\s*secret[-_]?answer\s*>|$)/gi, '')
+    .replace(/<\s*\/?\s*secret[-_]?answer\s*>/gi, '')
+    .replace(/<!--\s*(?:AGENT_HANDOVER|INTERNAL_DIRECTIVE|DOWNSTREAM_INSTRUCTIONS):[\s\S]*?-->/gi, '')
+    .trim();
+};
+
 const parseDeliverableFile = (
   title: string,
-  text: string,
+  rawText: string,
   domain: string,
   artifacts?: Record<string, any>
 ): FileDownloadInfo => {
+  const text = sanitizeDisplayOutput(rawText);
   const safeName =
     title
       .toLowerCase()
@@ -374,7 +386,7 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                       <div className="flex items-center gap-2 text-[11px] text-neutral-500 mt-1 font-mono">
                         <span>Worker: <strong className="text-neutral-300">{task.assigned_worker_model.split(' ')[0]}</strong></span>
                         <span>&bull;</span>
-                        <span>Reviewer: <strong className="text-neutral-300">{task.assigned_reviewer_model || 'Gemini 3.5 Flash'}</strong></span>
+                        <span>Reviewer: <strong className="text-neutral-300">{task.assigned_reviewer_model || 'Gemini 2.0 Flash'}</strong></span>
                       </div>
                     </div>
                   </div>
@@ -453,7 +465,7 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                                 <span>{rawViewSteps[task.step_id] ? 'View Formatted' : 'View Raw'}</span>
                               </button>
                               <button
-                                onClick={() => handleCopy(`step_${task.step_id}`, output.output_text)}
+                                onClick={() => handleCopy(`step_${task.step_id}`, sanitizeDisplayOutput(output.output_text))}
                                 className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.1] text-neutral-300 hover:text-white transition text-[11px] font-mono border border-white/[0.08]"
                                 title="Copy code/text to clipboard"
                               >
@@ -512,11 +524,11 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                           )}
                           {rawViewSteps[task.step_id] ? (
                             <pre className="p-4 rounded-xl bg-[#020202] border border-white/[0.08] font-mono text-xs text-neutral-200 overflow-x-auto whitespace-pre-wrap leading-relaxed min-h-[220px] max-h-[650px] overflow-y-auto selection:bg-indigo-500/30">
-                              {output.output_text}
+                              {sanitizeDisplayOutput(output.output_text)}
                             </pre>
                           ) : (
                             <div className="p-4 rounded-xl bg-[#020202] border border-white/[0.08] text-xs text-neutral-200 min-h-[220px] max-h-[650px] overflow-y-auto selection:bg-indigo-500/30">
-                              <MarkdownRenderer content={output.output_text} />
+                              <MarkdownRenderer content={sanitizeDisplayOutput(output.output_text)} />
                             </div>
                           )}
                         </div>

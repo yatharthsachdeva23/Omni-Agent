@@ -193,7 +193,7 @@ class WorkerPool:
                 prompt_gemini = f"{system_prompt}\n\n{user_msg}\n\nProvide the complete code deliverable in markdown code blocks."
                 async with httpx.AsyncClient(timeout=18.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_gemini}]}]}
                     )
                     if resp.status_code == 200:
@@ -498,7 +498,7 @@ if __name__ == "__main__":
             try:
                 async with httpx.AsyncClient(timeout=18.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_text}]}]}
                     )
                     if resp.status_code == 200:
@@ -623,7 +623,7 @@ if __name__ == "__main__":
                 prompt_gemini = f"{sys_msg}\n\n{user_msg}\n\nProvide rigorous formal derivations, formulas, or logical analysis."
                 async with httpx.AsyncClient(timeout=18.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_gemini}]}]}
                     )
                     if resp.status_code == 200:
@@ -738,7 +738,7 @@ if __name__ == "__main__":
                 prompt_gemini = f"{system_content}\n\n{user_msg}\n\nProduce the comprehensive deliverable fulfilling the user's request."
                 async with httpx.AsyncClient(timeout=25.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_gemini}]}]}
                     )
                     if resp.status_code == 200:
@@ -921,7 +921,7 @@ if __name__ == "__main__":
             try:
                 async with httpx.AsyncClient(timeout=6.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt}]}]}
                     )
                     if resp.status_code == 200:

@@ -26,7 +26,7 @@ class IntermediateReviewEngine:
     def __init__(self):
         self.gemini_key = config.GEMINI_API_KEY
         self.groq_key = config.GROQ_API_KEY
-        self.model_name = "gemini-3.5-flash-lite"
+        self.model_name = "gemini-2.5-flash"
         self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
 
     async def review_task(
@@ -39,7 +39,7 @@ class IntermediateReviewEngine:
     ) -> Tuple[IntermediateReviewResult, Optional[NegativeKnowledgeItem]]:
         domain = task.domain
         step_id = task.step_id
-        reviewer_model = "Gemini 3.5 Flash (Multimodal & Step QA Reviewer)"
+        reviewer_model = "Gemini 2.0 Flash (Multimodal & Step QA Reviewer)"
 
         # Prepare blackboard context summary for reviewer cross-referencing
         prior_lines = []
@@ -269,7 +269,7 @@ class IntermediateReviewEngine:
             if resp.status_code == 200:
                 data = resp.json()
                 raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return self._parse_review_json(raw_text, task, "Gemini 3.5 Flash (Live API)")
+                return self._parse_review_json(raw_text, task, "Gemini 2.0 Flash (Live API)")
         return None, None
 
     async def _call_groq_reviewer(

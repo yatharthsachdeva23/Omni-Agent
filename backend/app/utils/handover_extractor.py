@@ -24,56 +24,83 @@ def extract_and_sanitize_handover(
     text = raw_output
     handover: Dict[str, Any] = {}
 
-    # 1. Extract explicit <agent_handover>...</agent_handover> blocks
-    handover_block_match = re.search(r"<agent_handover>([\s\S]*?)</agent_handover>", text, flags=re.IGNORECASE)
-    if handover_block_match:
-        content = handover_block_match.group(1).strip()
-        try:
-            # Attempt JSON parse
-            parsed_json = json.loads(content)
-            if isinstance(parsed_json, dict):
-                handover.update(parsed_json)
-        except Exception:
-            # Fallback to key-value or raw directive extraction
-            for line in content.splitlines():
-                if ":" in line:
-                    k, v = line.split(":", 1)
-                    handover[k.strip().lower().replace(" ", "_")] = v.strip()
-                else:
-                    handover.setdefault("directives", []).append(line.strip())
-        # Strip the entire block from user deliverable
-        text = re.sub(r"<agent_handover>[\s\S]*?</agent_handover>", "", text, flags=re.IGNORECASE)
+    def try_parse_payload(content_str: str) -> bool:
+        """Attempts to parse JSON or key-value content into handover dict."""
+        if not content_str:
+            return False
+        clean_content = content_str.strip()
+        # Strip markdown code blocks if wrapped: ```json ... ``` or ``` ... ```
+        if clean_content.startswith("```"):
+            clean_content = re.sub(r"^```(?:json)?\s*", "", clean_content, flags=re.IGNORECASE)
+            clean_content = re.sub(r"\s*```$", "", clean_content)
+            clean_content = clean_content.strip()
 
-    # 2. Extract <secret_answer>...</secret_answer> tags
-    secret_match = re.search(r"<secret_answer>\s*(.*?)\s*</secret_answer>", text, flags=re.IGNORECASE)
-    if secret_match:
-        ans = secret_match.group(1).strip()
-        handover["secret_answer"] = ans
-        handover.setdefault("target_subject", ans)
-        text = re.sub(r"<secret_answer>[\s\S]*?</secret_answer>", "", text, flags=re.IGNORECASE)
-
-    # 3. Extract <!-- AGENT_HANDOVER: ... --> or <!-- INTERNAL_DIRECTIVE: ... --> comments
-    comment_match = re.search(r"<!--\s*(?:AGENT_HANDOVER|INTERNAL_DIRECTIVE|DOWNSTREAM_INSTRUCTIONS):\s*([\s\S]*?)\s*-->", text, flags=re.IGNORECASE)
-    if comment_match:
-        comm_content = comment_match.group(1).strip()
+        # Try json.loads
         try:
-            parsed_comm = json.loads(comm_content)
-            if isinstance(parsed_comm, dict):
-                handover.update(parsed_comm)
+            parsed = json.loads(clean_content)
+            if isinstance(parsed, dict):
+                handover.update(parsed)
+                return True
         except Exception:
-            handover["comment_directive"] = comm_content
-        text = re.sub(r"<!--\s*(?:AGENT_HANDOVER|INTERNAL_DIRECTIVE|DOWNSTREAM_INSTRUCTIONS):[\s\S]*?-->", "", text, flags=re.IGNORECASE)
+            pass
+
+        # Try regex extraction of JSON object if embedded in text
+        json_obj_m = re.search(r"\{[\s\S]*?\}", clean_content)
+        if json_obj_m:
+            try:
+                parsed = json.loads(json_obj_m.group(0))
+                if isinstance(parsed, dict):
+                    handover.update(parsed)
+                    return True
+            except Exception:
+                pass
+
+        # Key-value fallback: target_subject: ..., secret_answer: ...
+        found_any = False
+        for line in clean_content.splitlines():
+            if ":" in line:
+                k, v = line.split(":", 1)
+                k_norm = k.strip().lower().replace(" ", "_").strip('"\'')
+                v_norm = v.strip().strip('"\'').rstrip(",")
+                if k_norm in [
+                    "target_subject", "secret_answer", "answer", "subject",
+                    "recommended_image_prompt", "directives", "key"
+                ]:
+                    handover[k_norm] = v_norm
+                    found_any = True
+        return found_any
+
+    # 1. Flexible regex for <agent_handover> or <agent-handover> or <handover>
+    # Supports </agent_handover>, unslashed <agent_handover>, or end of string as closing tag!
+    handover_pattern = r"<\s*(?:agent[-_]?)?handover\s*>([\s\S]*?)(?:<\s*/?\s*(?:agent[-_]?)?handover\s*>|$)"
+    for m in re.finditer(handover_pattern, text, flags=re.IGNORECASE):
+        try_parse_payload(m.group(1))
+
+    # Strip all <agent_handover> blocks completely
+    text = re.sub(handover_pattern, "", text, flags=re.IGNORECASE)
+    # Extra safety: strip any leftover stray tags
+    text = re.sub(r"<\s*/?\s*(?:agent[-_]?)?handover\s*>", "", text, flags=re.IGNORECASE)
+
+    # 2. Extract <secret_answer>...</secret_answer> or unslashed <secret_answer>...<secret_answer> or end of string
+    secret_pattern = r"<\s*secret[-_]?answer\s*>([\s\S]*?)(?:<\s*/?\s*secret[-_]?answer\s*>|$)"
+    for sm in re.finditer(secret_pattern, text, flags=re.IGNORECASE):
+        s_val = sm.group(1).strip()
+        if s_val:
+            handover["secret_answer"] = s_val
+            handover.setdefault("target_subject", s_val)
+    text = re.sub(secret_pattern, "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*/?\s*secret[-_]?answer\s*>", "", text, flags=re.IGNORECASE)
+
+    # 3. Extract <!-- AGENT_HANDOVER: ... --> comments
+    comment_pattern = r"<!--\s*(?:AGENT_HANDOVER|INTERNAL_DIRECTIVE|DOWNSTREAM_INSTRUCTIONS):\s*([\s\S]*?)\s*-->"
+    for cm in re.finditer(comment_pattern, text, flags=re.IGNORECASE):
+        try_parse_payload(cm.group(1))
+    text = re.sub(comment_pattern, "", text, flags=re.IGNORECASE)
 
     # 4. Extract parenthetical or conversational notes directed at other agents/tools
-    # e.g. "(For the requested image of the object, please produce a picture of a pen.)"
-    # e.g. "(Note to next agent: generate an image of ...)"
-    # e.g. "(Instructions for step_2: render a ...)"
     leak_regexes = [
-        # Image directives
         r"\n*\(\s*(?:For the (?:requested|next|downstream) (?:image|visual|asset)|Note (?:for|to) (?:the )?(?:image|visual|next) agent|Please produce (?:an?|the) (?:picture|image|photo) of)\s*[:\-]?\s*([^)\n]+)\)\s*$",
-        # Multi-line variations
         r"\n*\(For the requested image[\s\S]*?\)\s*$",
-        # Generic downstream agent instructions in parentheses
         r"\n*\(\s*(?:Note|Instructions?|Directive) (?:to|for) (?:the )?(?:next|downstream|subsequent) (?:agent|step|model)\s*[:\-]?\s*([^)\n]+)\)\s*$"
     ]
 
@@ -81,9 +108,12 @@ def extract_and_sanitize_handover(
         m = re.search(pat, text, flags=re.IGNORECASE)
         if m:
             matched_str = m.group(0)
-            # Try to extract target subject if not already present
             if not handover.get("target_subject") and not handover.get("secret_answer"):
-                subj_m = re.search(r"(?:picture of a|picture of an|picture of|produce a|produce an|image of a|image of an|render a|render an)\s+([a-zA-Z0-9\s_-]+?)(?:\.|\)|$)", matched_str, flags=re.IGNORECASE)
+                subj_m = re.search(
+                    r"(?:picture of a|picture of an|picture of|produce a|produce an|image of a|image of an|render a|render an)\s+([a-zA-Z0-9\s_-]+?)(?:\.|\)|$)",
+                    matched_str,
+                    flags=re.IGNORECASE
+                )
                 if subj_m:
                     extracted_subj = subj_m.group(1).strip().rstrip(".)")
                     if extracted_subj:
@@ -92,16 +122,22 @@ def extract_and_sanitize_handover(
             handover["downstream_directive"] = matched_str.strip("()\n ")
             text = text[:m.start()] + text[m.end():]
 
-    # 5. Handle Secrecy / Riddle / Guessing game constraints
+    # 5. Extract trailing raw JSON if an agent output raw handover JSON at the very end
+    trailing_json_m = re.search(r"\n+\s*(\{[\s\S]*\"(?:target_subject|secret_answer|recommended_image_prompt)\"[\s\S]*\})\s*$", text)
+    if trailing_json_m:
+        if try_parse_payload(trailing_json_m.group(1)):
+            text = text[:trailing_json_m.start()]
+
+    # 6. Handle Secrecy / Riddle / Guessing game constraints
     is_secrecy_requested = any(w in primary_objective.lower() for w in [
         "dont tell the answer", "don't tell the answer", "dont give the answer", "don't give the answer",
         "not tell the answer", "without telling the answer", "dont reveal the answer", "don't reveal the answer",
-        "riddle", "guess", "spoiler", "secret"
+        "never revealed", "never reveal", "never state", "riddle", "guess", "spoiler", "secret"
     ])
 
     if is_secrecy_requested:
         # Strip trailing Answer/Solution reveals if leaked in text
-        reveal_m = re.search(r"\n*(?:Answer|Solution|Secret Answer|The answer is)\s*[:\-]\s*([^\n]+)\s*$", text, flags=re.IGNORECASE)
+        reveal_m = re.search(r"\n*(?:Answer|Solution|Secret Answer|The answer is|Target subject|Secret object)\s*[:\-]\s*([^\n]+)\s*$", text, flags=re.IGNORECASE)
         if reveal_m:
             if not handover.get("secret_answer"):
                 handover["secret_answer"] = reveal_m.group(1).strip()
