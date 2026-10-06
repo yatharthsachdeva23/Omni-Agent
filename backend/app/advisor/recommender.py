@@ -105,7 +105,7 @@ class AIAdvisorEngine:
             f"}}"
         )
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={self.gemini_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -130,16 +130,40 @@ class AIAdvisorEngine:
 
     async def _call_groq_advisor(self, user_query: str) -> Optional[AdvisorResponse]:
         """
-        Calls Groq Cloud (openai/gpt-oss-120b or qwen/qwen3.8-27b) with JSON mode.
+        Calls Groq Cloud with JSON mode and explicit schema.
         """
         system_prompt = (
-            "You are the AI Advisor for OmniTask AI.\n"
-            "Analyze the user's objective, choose optimal tools from the catalog, and generate custom DIY prompt templates.\n"
+            "You are the Lead AI Architecture Advisor for OmniTask AI.\n"
+            "Analyze the user's objective, break it down into milestones, choose the 2 to 4 optimal tools from the catalog, and generate custom DIY prompt templates.\n"
             f"AVAILABLE TOOLS CATALOG:\n{self.catalog_context}\n\n"
-            "Output ONLY valid JSON with keys: 'task_decomposition' (list of strings), 'recommendations' (list of recommendation objects), and 'diy_execution_blueprint' (list of blueprint objects)."
+            "You MUST output strictly valid JSON matching this schema:\n"
+            "{\n"
+            '  "task_decomposition": ["Step 1: ...", "Step 2: ..."],\n'
+            '  "recommendations": [\n'
+            "    {\n"
+            '      "tool_name": "Exact Tool Name from catalog",\n'
+            '      "category": "Domain Category",\n'
+            '      "provider": "Provider Name",\n'
+            '      "description": "Short description of tool",\n'
+            '      "why_recommended": "Specific technical justification for why this tool is chosen for this objective",\n'
+            '      "sample_prompt": "Production-ready, copy-pasteable prompt tailored for this tool and objective",\n'
+            '      "is_free": true,\n'
+            '      "pricing_tier": "Free / Freemium / Paid"\n'
+            "    }\n"
+            "  ],\n"
+            '  "diy_execution_blueprint": [\n'
+            "    {\n"
+            '      "step": 1,\n'
+            '      "action": "Concrete descriptive milestone title",\n'
+            '      "recommended_tool": "Tool Name",\n'
+            '      "instruction": "Detailed technical execution guidance for this milestone",\n'
+            '      "expected_output": "Concrete expected deliverable file or artifact"\n'
+            "    }\n"
+            "  ]\n"
+            "}"
         )
 
-        async with httpx.AsyncClient(timeout=12.0) as client:
+        async with httpx.AsyncClient(timeout=14.0) as client:
             resp = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={
@@ -165,41 +189,117 @@ class AIAdvisorEngine:
 
     def _parse_to_advisor_response(self, user_query: str, parsed: Dict[str, Any]) -> AdvisorResponse:
         """
-        Validates and parses JSON dict into strongly-typed AdvisorResponse.
+        Validates, enriches, and parses JSON dict into strongly-typed AdvisorResponse.
+        Resilient against schema variations and enriches from the tool catalog.
         """
         decomposition = parsed.get("task_decomposition", [])
         if not isinstance(decomposition, list):
             decomposition = [str(decomposition)]
+        if not decomposition:
+            decomposition = [
+                f"Step 1: Architecture Formulation for '{user_query[:50]}'",
+                "Step 2: Core Asset & Logic Implementation",
+                "Step 3: Verification & Packaging"
+            ]
+
+        # Helper to find tool in catalog
+        def find_in_catalog(t_name: str) -> Optional[Dict[str, Any]]:
+            if not t_name:
+                return None
+            norm = t_name.lower().replace("-", " ").replace("_", " ")
+            for item in self.catalog:
+                i_name = item.get("name", "").lower()
+                if i_name in norm or norm in i_name:
+                    return item
+            return None
 
         raw_recs = parsed.get("recommendations", [])
         recommendations: List[ToolRecommendation] = []
-        for r in raw_recs:
+        for idx, r in enumerate(raw_recs):
             if isinstance(r, dict):
-                # Ensure is_free is boolean
+                # Flexible extraction
+                t_name = r.get("tool_name") or r.get("tool") or r.get("name") or r.get("model") or "Specialized AI Tool"
+                cat = r.get("category") or r.get("domain") or r.get("type") or "General AI"
+                prov = r.get("provider") or r.get("company") or r.get("vendor") or "Independent"
+                desc = r.get("description") or r.get("summary") or r.get("overview") or ""
+                why_rec = r.get("why_recommended") or r.get("purpose") or r.get("reason") or r.get("why") or f"Top-tier performance and suitability for {user_query}."
+                prompt = r.get("sample_prompt") or r.get("prompt") or r.get("prompt_template") or r.get("template")
+
                 is_free_val = r.get("is_free", False)
                 if isinstance(is_free_val, str):
                     is_free_val = is_free_val.lower() in ["true", "1", "yes", "free"]
+                pricing = r.get("pricing_tier", "Freemium")
+
+                # Catalog enrichment
+                cat_match = find_in_catalog(t_name)
+                if cat_match:
+                    if prov in ["External AI", "Independent", ""]:
+                        prov = cat_match.get("provider", prov)
+                    if not desc:
+                        desc = cat_match.get("description", "")
+                    if cat in ["General AI", ""]:
+                        cat = cat_match.get("category", cat)
+                    if "is_free" not in r:
+                        is_free_val = cat_match.get("is_free", is_free_val)
+                    if "pricing_tier" not in r:
+                        pricing = cat_match.get("pricing_tier", pricing)
+
+                if not prompt or prompt.startswith("Assist me with:"):
+                    prompt = (
+                        f"Act as a principal specialist in {cat}. My goal is: {user_query}.\n"
+                        f"Using {t_name}, execute this milestone with production-grade precision, "
+                        f"providing full configuration, implementation code, and architectural guidelines."
+                    )
 
                 recommendations.append(ToolRecommendation(
-                    category=r.get("category", "General AI"),
-                    tool_name=r.get("tool_name", "AI Tool"),
-                    provider=r.get("provider", "External AI"),
-                    description=r.get("description", ""),
-                    why_recommended=r.get("why_recommended", "High-performance fit for this milestone."),
-                    sample_prompt=r.get("sample_prompt", f"Assist me with: {user_query}"),
+                    category=cat,
+                    tool_name=t_name,
+                    provider=prov,
+                    description=desc,
+                    why_recommended=why_rec,
+                    sample_prompt=prompt,
                     is_free=bool(is_free_val),
-                    pricing_tier=r.get("pricing_tier", "Freemium")
+                    pricing_tier=pricing
                 ))
+
+        # If recommendations were empty, fallback to catalog
+        if not recommendations:
+            return self._deterministic_fallback(user_query)
 
         blueprints = parsed.get("diy_execution_blueprint", [])
         formatted_blueprints: List[Dict[str, Any]] = []
         for idx, b in enumerate(blueprints):
             if isinstance(b, dict):
+                step_val = b.get("step", idx + 1)
+                try:
+                    step_num = int(step_val)
+                except Exception:
+                    step_num = idx + 1
+
+                action = b.get("action") or b.get("title") or b.get("milestone")
+                if not action and isinstance(step_val, str) and not step_val.strip().isdigit():
+                    action = step_val.strip()
+                if not action:
+                    action = f"Milestone {step_num}: System Implementation"
+
+                rec_tool = b.get("recommended_tool") or b.get("tool") or b.get("model") or b.get("tool_name")
+                if not rec_tool or rec_tool == "AI Model":
+                    rec_tool = recommendations[min(idx, len(recommendations) - 1)].tool_name
+
+                actions_list = b.get("actions")
+                if isinstance(actions_list, list) and actions_list:
+                    instruction = " ".join([str(a) for a in actions_list])
+                else:
+                    instruction = b.get("instruction") or b.get("guidance") or b.get("description") or f"Deploy {rec_tool} to complete {action} according to system architecture."
+
+                expected = b.get("expected_output") or b.get("deliverable") or b.get("output") or f"Verified {action} artifact & implementation specification"
+
                 formatted_blueprints.append({
-                    "step": b.get("step", idx + 1),
-                    "action": b.get("action", f"Milestone {idx + 1}"),
-                    "recommended_tool": b.get("recommended_tool", "AI Model"),
-                    "instruction": b.get("instruction", "Execute the prompt and synthesize results.")
+                    "step": step_num,
+                    "action": action,
+                    "recommended_tool": rec_tool,
+                    "instruction": instruction,
+                    "expected_output": expected
                 })
 
         return AdvisorResponse(
