@@ -151,5 +151,15 @@ AI_TOOLS_CATALOG: List[Dict[str, Any]] = [
         "strengths": ["Human-like cadence", "Multilingual", "Sound effects synthesis"],
         "is_free": True,
         "pricing_tier": "Freemium (Free monthly credits)"
+    },
+    {
+        "id": "suno-ai",
+        "name": "Suno AI",
+        "provider": "Suno",
+        "category": "Audio & Music",
+        "description": "Generative AI music engine producing background scores, instrumental tracks, and vocal themes.",
+        "strengths": ["Background music scoring", "Genre adaptation", "High fidelity audio"],
+        "is_free": True,
+        "pricing_tier": "Freemium (Daily free credits)"
     }
 ]

@@ -39,7 +39,8 @@ export const AnalyzerWorkspace: React.FC<AnalyzerWorkspaceProps> = ({
     existingResult ? 'Blueprint Synthesized Successfully' : 'Initializing Architectural Advisor...'
   );
   const [activeTab, setActiveTab] = useState<'all' | 'models' | 'roadmap'>('all');
-  const [copiedPromptIdx, setCopiedPromptIdx] = useState<number | null>(null);
+  const [copiedPromptKey, setCopiedPromptKey] = useState<string | null>(null);
+  const [selectedPhaseMap, setSelectedPhaseMap] = useState<Record<number, number>>({});
   const [copiedAll, setCopiedAll] = useState<boolean>(false);
   const [copiedUserPrompt, setCopiedUserPrompt] = useState<boolean>(false);
 
@@ -121,10 +122,10 @@ export const AnalyzerWorkspace: React.FC<AnalyzerWorkspaceProps> = ({
     };
   }, [prompt, existingResult]);
 
-  const copyToClipboard = (text: string, idx: number) => {
+  const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
-    setCopiedPromptIdx(idx);
-    setTimeout(() => setCopiedPromptIdx(null), 2000);
+    setCopiedPromptKey(key);
+    setTimeout(() => setCopiedPromptKey(null), 2000);
   };
 
   const copyUserPrompt = () => {
@@ -136,10 +137,15 @@ export const AnalyzerWorkspace: React.FC<AnalyzerWorkspaceProps> = ({
   const copyAllPrompts = () => {
     if (!result) return;
     const all = result.recommendations
-      .map(
-        (r, i) =>
-          `=== Model ${i + 1}: ${r.tool_name} (${r.category}) ===\nWhy: ${r.why_recommended}\nPrompt:\n${r.sample_prompt}\n`
-      )
+      .map((r, i) => {
+        const phasesStr = r.assigned_phases && r.assigned_phases.length > 0
+          ? ` [Phases: ${r.assigned_phases.map((p) => `Phase ${p}`).join(', ')}]`
+          : '';
+        const promptsStr = (r.phase_prompts && r.phase_prompts.length > 0)
+          ? r.phase_prompts.map((p) => `--- Phase ${p.phase} Prompt (${p.phase_title || `Phase ${p.phase}`}) ---\n${p.prompt}`).join('\n\n')
+          : r.sample_prompt;
+        return `=== Model ${i + 1}: ${r.tool_name} (${r.category})${phasesStr} ===\nWhy: ${r.why_recommended}\n\n${promptsStr}\n`;
+      })
       .join('\n\n');
     navigator.clipboard.writeText(all);
     setCopiedAll(true);
@@ -156,18 +162,21 @@ ${result.task_decomposition.map((stage, i) => `${i + 1}. ${stage}`).join('\n')}
 
 ## 2. Recommended Best-in-Class Models
 ${result.recommendations
-  .map(
-    (r) =>
-      `### ${r.tool_name} (${r.category})
+  .map((r) => {
+    const phasesStr = r.assigned_phases && r.assigned_phases.length > 0
+      ? ` | Phases: ${r.assigned_phases.map((p) => `Phase ${p}`).join(', ')}`
+      : '';
+    const promptsStr = (r.phase_prompts && r.phase_prompts.length > 0)
+      ? r.phase_prompts.map((p) => `#### ${p.phase_title || `Phase ${p.phase} Prompt`}\n\`\`\`\n${p.prompt}\n\`\`\``).join('\n\n')
+      : `\`\`\`\n${r.sample_prompt}\n\`\`\``;
+    return `### ${r.tool_name} (${r.category}${phasesStr})
 - Provider: ${r.provider}
 - Tier: ${r.pricing_tier}
 - Rationale: ${r.why_recommended}
 
-\`\`\`
-${r.sample_prompt}
-\`\`\`
-`
-  )
+${promptsStr}
+`;
+  })
   .join('\n')}
 
 ## 3. DIY Implementation Roadmap
@@ -430,68 +439,130 @@ ${result.diy_execution_blueprint
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  {result.recommendations.map((rec, idx) => (
-                    <div
-                      key={idx}
-                      className="bg-[#080808] border border-white/[0.08] hover:border-white/[0.18] rounded-2xl p-6 space-y-4 transition-all flex flex-col justify-between shadow-xl"
-                    >
-                      <div className="space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-medium">
-                              {rec.category}
+                  {result.recommendations.map((rec, idx) => {
+                    const activePromptIdx = selectedPhaseMap[idx] ?? 0;
+                    const activePrompt =
+                      rec.phase_prompts && rec.phase_prompts.length > activePromptIdx
+                        ? rec.phase_prompts[activePromptIdx]
+                        : { phase: rec.assigned_phases?.[0] ?? 1, prompt: rec.sample_prompt, phase_title: '' };
+                    const promptKey = `${idx}-${activePromptIdx}`;
+
+                    return (
+                      <div
+                        key={idx}
+                        className="bg-[#080808] border border-white/[0.08] hover:border-white/[0.18] rounded-2xl p-6 space-y-4 transition-all flex flex-col justify-between shadow-xl"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-medium">
+                                {rec.category}
+                              </span>
+                              <h4 className="text-lg font-medium text-white">
+                                {rec.tool_name}
+                              </h4>
+                              <p className="text-xs text-neutral-500 font-mono">{rec.provider}</p>
+
+                              {/* Phase Badges */}
+                              {rec.assigned_phases && rec.assigned_phases.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                  {rec.assigned_phases.map((ph) => (
+                                    <span
+                                      key={ph}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono text-[10px] font-semibold"
+                                    >
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                      Phase {ph}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <span className="text-[10px] font-mono px-2.5 py-1 rounded-full border border-white/[0.1] bg-white/[0.03] text-neutral-300 shrink-0">
+                              {rec.pricing_tier}
                             </span>
-                            <h4 className="text-lg font-medium text-white mt-0.5">
-                              {rec.tool_name}
-                            </h4>
-                            <p className="text-xs text-neutral-500 font-mono">{rec.provider}</p>
                           </div>
-                          <span className="text-[10px] font-mono px-2.5 py-1 rounded-full border border-white/[0.1] bg-white/[0.03] text-neutral-300">
-                            {rec.pricing_tier}
-                          </span>
+
+                          <p className="text-xs text-neutral-300 leading-relaxed">
+                            {rec.description}
+                          </p>
+
+                          <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs text-neutral-300 flex items-start gap-2.5">
+                            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                            <span className="leading-relaxed">
+                              <strong className="text-white">Why Selected: </strong>
+                              {rec.why_recommended}
+                            </span>
+                          </div>
                         </div>
 
-                        <p className="text-xs text-neutral-300 leading-relaxed">
-                          {rec.description}
-                        </p>
+                        {/* Phase Prompts Section */}
+                        <div className="pt-3 border-t border-white/[0.06] space-y-2.5">
+                          {/* Multi-phase Tabs if tool spans multiple phases */}
+                          {rec.phase_prompts && rec.phase_prompts.length > 1 && (
+                            <div className="flex items-center gap-1.5 p-1 bg-white/[0.02] border border-white/[0.06] rounded-xl overflow-x-auto">
+                              {rec.phase_prompts.map((pp, pIdx) => {
+                                const isSelected = activePromptIdx === pIdx;
+                                return (
+                                  <button
+                                    key={pIdx}
+                                    onClick={() =>
+                                      setSelectedPhaseMap((prev) => ({ ...prev, [idx]: pIdx }))
+                                    }
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all shrink-0 flex items-center gap-1.5 ${
+                                      isSelected
+                                        ? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+                                        : 'text-neutral-400 hover:text-white'
+                                    }`}
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                    <span>Phase {pp.phase} Prompt</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
 
-                        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs text-neutral-300 flex items-start gap-2.5">
-                          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                          <span className="leading-relaxed">
-                            <strong className="text-white">Why Selected: </strong>
-                            {rec.why_recommended}
-                          </span>
+                          <div className="flex items-center justify-between text-xs text-neutral-400">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-[11px] text-neutral-400 font-semibold">
+                                {rec.phase_prompts && rec.phase_prompts.length > 1
+                                  ? `Phase ${activePrompt.phase} Ready Prompt`
+                                  : (activePrompt.phase ? `Phase ${activePrompt.phase} Ready Prompt` : 'Ready-to-use Prompt')}
+                              </span>
+                              {activePrompt.phase_title && (
+                                <span className="text-[11px] text-neutral-500 hidden sm:inline truncate max-w-[200px]">
+                                  &bull; {activePrompt.phase_title.includes(':') ? activePrompt.phase_title.split(':')[1]?.trim() : activePrompt.phase_title}
+                                </span>
+                              )}
+                            </div>
+
+                            <button
+                              onClick={() => copyToClipboard(activePrompt.prompt, promptKey)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] text-xs text-white border border-white/[0.08] transition-all"
+                            >
+                              {copiedPromptKey === promptKey ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span className="text-emerald-400 font-medium">Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5" />
+                                  <span>Copy Prompt</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          <div className="p-3.5 rounded-xl bg-[#030303] border border-white/[0.06] font-mono text-xs text-neutral-300 leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap select-all selection:bg-emerald-500/30">
+                            {activePrompt.prompt}
+                          </div>
                         </div>
                       </div>
-
-                      {/* Ready-to-use Prompt Box (Spacious, easy to read and copy) */}
-                      <div className="pt-3 border-t border-white/[0.06] space-y-2">
-                        <div className="flex items-center justify-between text-xs text-neutral-400">
-                          <span className="font-mono text-[11px] text-neutral-500">Ready-to-use Prompt:</span>
-                          <button
-                            onClick={() => copyToClipboard(rec.sample_prompt, idx)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] text-xs text-white border border-white/[0.08] transition-all"
-                          >
-                            {copiedPromptIdx === idx ? (
-                              <>
-                                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                <span className="text-emerald-400 font-medium">Copied!</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5" />
-                                <span>Copy Prompt</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        <div className="p-3.5 rounded-xl bg-[#030303] border border-white/[0.06] font-mono text-xs text-neutral-300 leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap select-all selection:bg-emerald-500/30">
-                          {rec.sample_prompt}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

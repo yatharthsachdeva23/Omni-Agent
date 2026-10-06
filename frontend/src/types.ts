@@ -88,6 +88,12 @@ export interface BlackboardSnapshot {
   }>;
 }
 
+export interface PhasePrompt {
+  phase: number;
+  phase_title?: string;
+  prompt: string;
+}
+
 export interface ToolRecommendation {
   category: string;
   tool_name: string;
@@ -97,6 +103,8 @@ export interface ToolRecommendation {
   sample_prompt: string;
   is_free: boolean;
   pricing_tier: string;
+  assigned_phases?: number[];
+  phase_prompts?: PhasePrompt[];
 }
 
 export interface AdvisorResponse {

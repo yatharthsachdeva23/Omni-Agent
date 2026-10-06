@@ -109,15 +109,22 @@ class FinalEvaluationResult(BaseModel):
     deliverables: Dict[str, Any] = Field(default_factory=dict)
 
 # Track 1 Models
+class PhasePrompt(BaseModel):
+    phase: int
+    phase_title: str = ""
+    prompt: str
+
 class ToolRecommendation(BaseModel):
     category: str
     tool_name: str
     provider: str
     description: str
     why_recommended: str
-    sample_prompt: str
+    sample_prompt: str = ""
     is_free: bool = False
     pricing_tier: str
+    assigned_phases: List[int] = Field(default_factory=list)
+    phase_prompts: List[PhasePrompt] = Field(default_factory=list)
 
 class AdvisorResponse(BaseModel):
     original_query: str
