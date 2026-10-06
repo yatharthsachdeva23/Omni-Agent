@@ -33,6 +33,7 @@ class TaskRequest(BaseModel):
     prompt: str
     files: List[IngestedFile] = Field(default_factory=list)
     mode: str = "paid"  # "paid" for Omni Execution, "free" for Advisor
+    delivery_mode: str = "overdeliver"  # "overdeliver" (default) or "strict"
     allow_simulation: bool = True
     ask_before_doing: bool = True
     user_clarifications: Optional[Dict[str, str]] = None
@@ -107,6 +108,9 @@ class FinalEvaluationResult(BaseModel):
     internal_audit_notes: List[str] = Field(default_factory=list)
     summary_for_user: str
     deliverables: Dict[str, Any] = Field(default_factory=dict)
+    delivery_mode: str = "overdeliver"  # "overdeliver" or "strict"
+    anticipated_blind_spots: List[str] = Field(default_factory=list)
+    complimentary_starter_pack: Dict[str, Any] = Field(default_factory=dict)
 
 # Track 1 Models
 class PhasePrompt(BaseModel):
@@ -131,6 +135,9 @@ class AdvisorResponse(BaseModel):
     task_decomposition: List[str]
     recommendations: List[ToolRecommendation]
     diy_execution_blueprint: List[Dict[str, Any]]
+    delivery_mode: str = "overdeliver"  # "overdeliver" or "strict"
+    anticipated_blind_spots: List[str] = Field(default_factory=list)
+    complimentary_starter_pack: Dict[str, Any] = Field(default_factory=dict)
 
 # Interactive Planning Models (Ask Before Doing)
 class PlanClarifyingQuestion(BaseModel):

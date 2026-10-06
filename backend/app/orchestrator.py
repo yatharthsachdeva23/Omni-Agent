@@ -147,7 +147,18 @@ class OmniOrchestrator:
                 attempt += 1
                 task.retry_count = attempt - 1
                 critique_note = review_result.critique or "Quality score fell below required 85% threshold."
-                regen_prompt = review_result.reviewer_regenerate_prompt or f"{task.description}. Specifically rectify: {critique_note}"
+                
+                # Sanitize diffusion prompts: NEVER pass technical review/accessibility rejection jargon into visual models
+                is_visual_task = task.domain in [DomainType.VISION, DomainType.VIDEO] or "flux" in (task.assigned_worker_model or "").lower()
+                if is_visual_task:
+                    candidate = (review_result.reviewer_regenerate_prompt or "").strip()
+                    has_error_jargon = any(err in candidate.lower() for err in ["rejection", "failed", "accessibility", "error", "critic", "penaliz", "status", "threshold", "corrupted"])
+                    if candidate and not has_error_jargon:
+                        regen_prompt = candidate
+                    else:
+                        regen_prompt = task.description
+                else:
+                    regen_prompt = review_result.reviewer_regenerate_prompt or f"{task.description}. Specifically rectify: {critique_note}"
 
                 retry_avoidance = f"SELF-CORRECTION ATTEMPT {attempt}/{max_attempts}: Prior attempt scored {review_result.quality_score}%. Reviewer critique: {critique_note}. Regenerate strictly following: {regen_prompt}"
                 if "negative_knowledge_avoidance_rules" not in context_packet:
@@ -231,7 +242,8 @@ class OmniOrchestrator:
         })
         await asyncio.sleep(0.5)
 
-        evaluation = self.evaluator.evaluate(blackboard.get_state())
+        delivery_mode = getattr(request, "delivery_mode", "overdeliver") or "overdeliver"
+        evaluation = self.evaluator.evaluate(blackboard.get_state(), delivery_mode=delivery_mode)
         yield self._format_sse("EXECUTION_COMPLETED", {
             "session_id": session_id,
             "final_evaluation": evaluation.model_dump(),

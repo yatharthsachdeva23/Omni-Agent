@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
-import { Send, Copy, Check, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
-import { AdvisorResponse } from '../types';
+import { Send, Copy, Check, ArrowRight, ShieldCheck, Sparkles, AlertTriangle, Gift, FileText, Music, Image as ImageIcon, CheckSquare, Target } from 'lucide-react';
+import { AdvisorResponse, DeliveryMode } from '../types';
 
 interface Track1AdvisorProps {
-  onGenerate?: (promptText: string) => void;
+  onGenerate?: (promptText: string, deliveryMode?: DeliveryMode) => void;
   initialPrompt?: string;
+  initialDeliveryMode?: DeliveryMode;
 }
 
 export const Track1Advisor: React.FC<Track1AdvisorProps> = ({
   onGenerate,
-  initialPrompt = ''
+  initialPrompt = '',
+  initialDeliveryMode = 'overdeliver'
 }) => {
   const [prompt, setPrompt] = useState(initialPrompt);
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(initialDeliveryMode);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AdvisorResponse | null>(null);
   const [copiedPromptKey, setCopiedPromptKey] = useState<string | null>(null);
@@ -29,7 +32,7 @@ export const Track1Advisor: React.FC<Track1AdvisorProps> = ({
     if (!q.trim()) return;
 
     if (onGenerate) {
-      onGenerate(q);
+      onGenerate(q, deliveryMode);
       return;
     }
 
@@ -38,7 +41,7 @@ export const Track1Advisor: React.FC<Track1AdvisorProps> = ({
       const res = await fetch('/api/advisor/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: q })
+        body: JSON.stringify({ prompt: q, delivery_mode: deliveryMode })
       });
       const data = await res.json();
       setResult(data);
@@ -76,6 +79,43 @@ export const Track1Advisor: React.FC<Track1AdvisorProps> = ({
 
       {/* Input Box */}
       <div className="bg-[#080808] border border-white/[0.08] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
+        {/* Delivery Mode Toggle */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-400">Delivery Mode</span>
+            <span className="text-[10px] text-neutral-500 font-sans">Choose response depth</span>
+          </div>
+
+          <div className="inline-flex items-center p-1 rounded-xl bg-[#030303] border border-white/[0.08] gap-1">
+            <button
+              type="button"
+              onClick={() => setDeliveryMode('overdeliver')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                deliveryMode === 'overdeliver'
+                  ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/10 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Overdeliver Mode</span>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Recommended</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDeliveryMode('strict')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                deliveryMode === 'strict'
+                  ? 'bg-white/10 text-white border border-white/20 shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              <Target className="w-3.5 h-3.5 text-neutral-400" />
+              <span>Strict Mode</span>
+            </button>
+          </div>
+        </div>
+
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -295,6 +335,149 @@ export const Track1Advisor: React.FC<Track1AdvisorProps> = ({
               ))}
             </div>
           </div>
+
+          {/* Section 04: Anticipated Blind Spots (Only in Overdeliver Mode) */}
+          {result.anticipated_blind_spots && result.anticipated_blind_spots.length > 0 && (
+            <div className="bg-[#080808] border border-amber-500/20 rounded-2xl p-6 space-y-4 shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none"></div>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-amber-500/10 text-amber-400 flex items-center justify-center text-[10px] font-mono border border-amber-500/20">04</span>
+                  <span>Anticipated Blind Spots & Pitfalls</span>
+                </h3>
+                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                  Anticipatory Intelligence
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                Critical nuances, audience psychology, and regulatory bottlenecks you didn't ask about, but need to know:
+              </p>
+              <div className="space-y-2.5">
+                {result.anticipated_blind_spots.map((spot, sIdx) => {
+                  const parts = spot.split(': ');
+                  const title = parts.length > 1 ? parts[0] : `Point ${sIdx + 1}`;
+                  const body = parts.length > 1 ? parts.slice(1).join(': ') : spot;
+                  return (
+                    <div key={sIdx} className="p-3.5 rounded-xl bg-[#030303] border border-amber-500/15 flex items-start gap-3">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <span className="text-xs font-semibold text-amber-200 block">{title}</span>
+                        <p className="text-xs text-neutral-300 leading-relaxed">{body}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Section 05: Complimentary Starter Pack (Only in Overdeliver Mode) */}
+          {result.complimentary_starter_pack && Object.keys(result.complimentary_starter_pack).length > 0 && (
+            <div className="bg-[#080808] border border-emerald-500/20 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-md bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-[10px] font-mono border border-emerald-500/20">05</span>
+                    <span>Complimentary Production Starter Pack</span>
+                  </h3>
+                  <p className="text-xs text-neutral-400">
+                    Omni's complimentary assets and launch formulas prepared specifically for your project.
+                  </p>
+                </div>
+                <span className="text-[10px] font-mono uppercase px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1">
+                  <Gift className="w-3 h-3 text-emerald-400" />
+                  <span>Free Gift Deliverables</span>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {/* 1. Pilot Starter Script */}
+                {result.complimentary_starter_pack.pilot_starter_script && (
+                  <div className="p-4 rounded-xl bg-[#030303] border border-white/[0.06] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-xs font-semibold text-white">Ready-to-Use Pilot Starter Script</span>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(result.complimentary_starter_pack!.pilot_starter_script!, 'pilot_script')}
+                        className="flex items-center gap-1 text-[11px] font-mono text-neutral-400 hover:text-white transition-colors"
+                      >
+                        {copiedPromptKey === 'pilot_script' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedPromptKey === 'pilot_script' ? 'Copied' : 'Copy Script'}</span>
+                      </button>
+                    </div>
+                    <pre className="p-3 rounded-lg bg-black/60 border border-white/[0.04] text-[11px] font-mono text-neutral-300 whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed">
+                      {result.complimentary_starter_pack.pilot_starter_script}
+                    </pre>
+                  </div>
+                )}
+
+                {/* 2. Sensory & Audio Formula */}
+                {result.complimentary_starter_pack.sensory_and_audio_formula && (
+                  <div className="p-4 rounded-xl bg-[#030303] border border-white/[0.06] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Music className="w-3.5 h-3.5 text-purple-400" />
+                        <span className="text-xs font-semibold text-white">Sensory & Audio Pacing Formula</span>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(result.complimentary_starter_pack!.sensory_and_audio_formula!, 'audio_formula')}
+                        className="flex items-center gap-1 text-[11px] font-mono text-neutral-400 hover:text-white transition-colors"
+                      >
+                        {copiedPromptKey === 'audio_formula' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedPromptKey === 'audio_formula' ? 'Copied' : 'Copy Formula'}</span>
+                      </button>
+                    </div>
+                    <pre className="p-3 rounded-lg bg-black/60 border border-white/[0.04] text-[11px] font-mono text-neutral-300 whitespace-pre-wrap leading-relaxed">
+                      {result.complimentary_starter_pack.sensory_and_audio_formula}
+                    </pre>
+                  </div>
+                )}
+
+                {/* 3. Visual Style & Thumbnail Prompt */}
+                {result.complimentary_starter_pack.visual_style_and_thumbnail_prompt && (
+                  <div className="p-4 rounded-xl bg-[#030303] border border-white/[0.06] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="text-xs font-semibold text-white">High-CTR Thumbnail & Art Prompt</span>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(result.complimentary_starter_pack!.visual_style_and_thumbnail_prompt!, 'visual_thumb')}
+                        className="flex items-center gap-1 text-[11px] font-mono text-neutral-400 hover:text-white transition-colors"
+                      >
+                        {copiedPromptKey === 'visual_thumb' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedPromptKey === 'visual_thumb' ? 'Copied' : 'Copy Prompt'}</span>
+                      </button>
+                    </div>
+                    <pre className="p-3 rounded-lg bg-black/60 border border-white/[0.04] text-[11px] font-mono text-neutral-300 whitespace-pre-wrap leading-relaxed">
+                      {result.complimentary_starter_pack.visual_style_and_thumbnail_prompt}
+                    </pre>
+                  </div>
+                )}
+
+                {/* 4. Pre-Flight Checklist */}
+                {result.complimentary_starter_pack.retention_and_launch_checklist && result.complimentary_starter_pack.retention_and_launch_checklist.length > 0 && (
+                  <div className="p-4 rounded-xl bg-[#030303] border border-white/[0.06] space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-xs font-semibold text-white">Pre-Flight Retention & Launch Checklist</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {result.complimentary_starter_pack.retention_and_launch_checklist.map((item: string, iIdx: number) => (
+                        <div key={iIdx} className="flex items-start gap-2.5 text-xs text-neutral-300">
+                          <span className="text-emerald-400 font-mono mt-0.5">&bull;</span>
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

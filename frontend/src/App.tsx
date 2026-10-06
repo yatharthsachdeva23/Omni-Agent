@@ -4,7 +4,7 @@ import { Track1Advisor } from './components/Track1Advisor';
 import { Track2Execution } from './components/Track2Execution';
 import { AnalyzerWorkspace } from './components/AnalyzerWorkspace';
 import { WorkerWorkspace } from './components/WorkerWorkspace';
-import { IngestedFile } from './types';
+import { IngestedFile, DeliveryMode } from './types';
 import { ToolCatalogModal } from './components/ToolCatalogModal';
 import { AiOrchestrationMesh } from './components/AiOrchestrationMesh';
 import { Compass, Zap, ArrowDown, ChevronDown, Sparkles, Layers, ShieldCheck, Cpu } from 'lucide-react';
@@ -13,6 +13,7 @@ type AppView = 'landing' | 'analyzer-workspace' | 'worker-workspace';
 
 export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<AppView>('landing');
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('overdeliver');
   const [analyzerPrompt, setAnalyzerPrompt] = useState<string>('');
   const [workerPrompt, setWorkerPrompt] = useState<string>('');
   const [workerFiles, setWorkerFiles] = useState<IngestedFile[]>([]);
@@ -93,13 +94,15 @@ export const App: React.FC = () => {
       <>
         <AnalyzerWorkspace
           prompt={analyzerPrompt}
+          initialDeliveryMode={deliveryMode}
           onBack={() => {
             setActiveView('landing');
             setTimeout(() => scrollToSection('analyzer'), 50);
           }}
           onRunAgain={(newP) => setAnalyzerPrompt(newP)}
-          onDeployToWorkerPool={(p) => {
+          onDeployToWorkerPool={(p, mode) => {
             setWorkerPrompt(p);
+            setDeliveryMode(mode || deliveryMode);
             setWorkerFiles([]);
             setWorkerAskBeforeDoing(true);
             setWorkerClarifications(undefined);
@@ -122,6 +125,7 @@ export const App: React.FC = () => {
         <WorkerWorkspace
           prompt={workerPrompt}
           files={workerFiles}
+          deliveryMode={deliveryMode}
           askBeforeDoing={workerAskBeforeDoing}
           clarifications={workerClarifications}
           approvedPlanSummary={workerPlanSummary}
@@ -294,8 +298,10 @@ export const App: React.FC = () => {
           {/* Full Interactive Tooling for Track 1 */}
           <div className="w-full">
             <Track1Advisor
-              onGenerate={(p) => {
+              initialDeliveryMode={deliveryMode}
+              onGenerate={(p, mode) => {
                 setAnalyzerPrompt(p);
+                setDeliveryMode(mode || 'overdeliver');
                 setActiveView('analyzer-workspace');
               }}
               initialPrompt={analyzerPrompt}
@@ -330,9 +336,11 @@ export const App: React.FC = () => {
           {/* Full Interactive Tooling for Track 2 */}
           <div className="w-full">
             <Track2Execution
+              initialDeliveryMode={deliveryMode}
               onLaunchExecution={(params) => {
                 setWorkerPrompt(params.prompt);
                 setWorkerFiles(params.files);
+                setDeliveryMode(params.deliveryMode || deliveryMode);
                 setWorkerAskBeforeDoing(params.askBeforeDoing);
                 setWorkerClarifications(params.clarifications);
                 setWorkerPlanSummary(params.approvedPlanSummary);

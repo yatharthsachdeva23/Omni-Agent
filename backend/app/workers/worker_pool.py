@@ -963,10 +963,16 @@ if __name__ == "__main__":
         import uuid
 
         raw_text = task.description or objective
-        # If reviewer gave a concrete regenerate prompt, use it directly!
+        # If reviewer gave a concrete regenerate prompt, sanitize and use it directly!
         if override_prompt and len(override_prompt.strip()) > 3:
-            subject = override_prompt.strip()
-            clean_prompt = override_prompt.strip()
+            raw_override = override_prompt.strip()
+            for err_marker in ["Specifically rectify:", "CRITICAL VISUAL REJECTION:", "failed accessibility check", "Quality score fell below", "Self-correction attempt"]:
+                if err_marker.lower() in raw_override.lower():
+                    raw_override = re.split(re.escape(err_marker), raw_override, flags=re.IGNORECASE)[0].strip()
+            if not raw_override or len(raw_override) < 3:
+                raw_override = task.description or objective
+            subject = raw_override
+            clean_prompt = raw_override
             width, height = 1024, 576
             aspect_ratio = "16:9"
         else:

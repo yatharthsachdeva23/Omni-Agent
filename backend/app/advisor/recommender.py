@@ -25,15 +25,16 @@ class AIAdvisorEngine:
             for t in self.catalog
         ])
 
-    async def advise_async(self, user_query: str) -> AdvisorResponse:
+    async def advise_async(self, user_query: str, delivery_mode: str = "overdeliver") -> AdvisorResponse:
         """
         Primary LLM-powered advisory engine.
         Uses live Gemini 3.5 Flash / Groq to understand nuanced requirements and prescribe tools.
+        Supports 'overdeliver' (anticipatory insights + starter gifts) and 'strict' modes.
         """
         # 1. Try Gemini 3.5 Flash Lite (First choice: fast, intelligent, structured JSON)
         if self.gemini_key:
             try:
-                gemini_resp = await self._call_gemini_advisor(user_query)
+                gemini_resp = await self._call_gemini_advisor(user_query, delivery_mode=delivery_mode)
                 if gemini_resp:
                     return gemini_resp
             except Exception as e:
@@ -42,16 +43,16 @@ class AIAdvisorEngine:
         # 2. Try Groq Cloud (Secondary LLM fallback: sub-second inference)
         if self.groq_key:
             try:
-                groq_resp = await self._call_groq_advisor(user_query)
+                groq_resp = await self._call_groq_advisor(user_query, delivery_mode=delivery_mode)
                 if groq_resp:
                     return groq_resp
             except Exception as e:
                 print(f"[AI Advisor] Groq call error: {e}. Falling back to baseline recommender.")
 
         # 3. Deterministic Safety Fallback (Guarantees zero-failure if all APIs are offline)
-        return self._deterministic_fallback(user_query)
+        return self._deterministic_fallback(user_query, delivery_mode=delivery_mode)
 
-    def advise(self, user_query: str) -> AdvisorResponse:
+    def advise(self, user_query: str, delivery_mode: str = "overdeliver") -> AdvisorResponse:
         """
         Synchronous wrapper for backwards compatibility.
         """
@@ -62,13 +63,31 @@ class AIAdvisorEngine:
                 # If running within an active event loop, run in a separate task or thread
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    return executor.submit(asyncio.run, self.advise_async(user_query)).result()
+                    return executor.submit(asyncio.run, self.advise_async(user_query, delivery_mode=delivery_mode)).result()
             else:
-                return loop.run_until_complete(self.advise_async(user_query))
+                return loop.run_until_complete(self.advise_async(user_query, delivery_mode=delivery_mode))
         except Exception:
-            return self._deterministic_fallback(user_query)
+            return self._deterministic_fallback(user_query, delivery_mode=delivery_mode)
 
-    def _build_advisor_prompt(self, user_query: str) -> str:
+    def _build_advisor_prompt(self, user_query: str, delivery_mode: str = "overdeliver") -> str:
+        overdeliver_rule = ""
+        if delivery_mode == "overdeliver":
+            overdeliver_rule = (
+                "5. PROACTIVE ANTICIPATORY INTELLIGENCE (OVERDELIVER MODE ACTIVATED):\n"
+                "   The user has selected 'Overdeliver Mode'. Beyond fulfilling their core request, you MUST anticipate their blind spots and provide valuable complimentary starter assets:\n"
+                "   - 'anticipated_blind_spots': A list of 4-6 critical domain gotchas the user didn't explicitly think to ask about (e.g. audience psychology, hidden regulatory/COPPA pitfalls, pacing and audio retention drivers, sensory overload, common beginner mistakes).\n"
+                "   - 'complimentary_starter_pack': A dictionary containing high-value bonus assets tailored to their goal:\n"
+                "     * 'pilot_starter_script': A ready-to-use 60-second pilot script or starter template.\n"
+                "     * 'sensory_and_audio_formula': Exact recommended music style, BPM, voice cadence, and audio cues.\n"
+                "     * 'visual_style_and_thumbnail_prompt': Exact Midjourney/Flux prompt for a high-CTR thumbnail or character key visual.\n"
+                "     * 'retention_and_launch_checklist': 4-5 bullet points of crucial do's and don'ts before publishing.\n\n"
+            )
+        else:
+            overdeliver_rule = (
+                "5. STRICT DIRECT EXECUTION MODE:\n"
+                "   The user has selected 'Strict Mode'. Deliver strictly and concisely only what was asked. Leave 'anticipated_blind_spots' as an empty array [] and 'complimentary_starter_pack' as an empty dictionary {}.\n\n"
+            )
+
         return (
             "You are the Lead AI Architecture Advisor for OmniTask AI.\n"
             f"Analyze this complex user goal deeply:\n"
@@ -91,6 +110,7 @@ class AIAdvisorEngine:
             "     '[Insert narrative script generated in Phase 2 here]'\n"
             "     '[Insert character / storyboard description from Phase 3 here]'\n"
             "     '[Insert structured research data from Phase 1 here]'\n\n"
+            f"{overdeliver_rule}"
             f"AVAILABLE AI TOOLS CATALOG:\n{self.catalog_context}\n\n"
             "Output must be a strictly valid JSON object matching this schema:\n"
             "{\n"
@@ -127,15 +147,29 @@ class AIAdvisorEngine:
             '      "instruction": "Step-by-step guidance on how to run this tool and pass its output downstream",\n'
             '      "expected_output": "Concrete deliverable file or artifact"\n'
             "    }\n"
-            "  ]\n"
+            "  ],\n"
+            '  "delivery_mode": "' + delivery_mode + '",\n'
+            '  "anticipated_blind_spots": [\n'
+            '    "Anticipated Gotcha 1 (What the user did not think to ask)...",\n'
+            '    "Anticipated Gotcha 2..."\n'
+            "  ],\n"
+            '  "complimentary_starter_pack": {\n'
+            '    "pilot_starter_script": "Ready-to-use starter template or pilot script tailored to goal",\n'
+            '    "sensory_and_audio_formula": "Exact music style, BPM, and voice cadence",\n'
+            '    "visual_style_and_thumbnail_prompt": "Midjourney/Flux prompt for key visual or thumbnail",\n'
+            '    "retention_and_launch_checklist": [\n'
+            '      "Checklist item 1...",\n'
+            '      "Checklist item 2..."\n'
+            "    ]\n"
+            "  }\n"
             "}"
         )
 
-    async def _call_gemini_advisor(self, user_query: str) -> Optional[AdvisorResponse]:
+    async def _call_gemini_advisor(self, user_query: str, delivery_mode: str = "overdeliver") -> Optional[AdvisorResponse]:
         """
         Calls Google Gemini using structured JSON mode to analyze the user's objective.
         """
-        prompt = self._build_advisor_prompt(user_query)
+        prompt = self._build_advisor_prompt(user_query, delivery_mode=delivery_mode)
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -158,18 +192,18 @@ class AIAdvisorEngine:
                         if isinstance(parsed, list) and len(parsed) > 0:
                             parsed = parsed[0]
 
-                        return self._parse_to_advisor_response(user_query, parsed)
+                        return self._parse_to_advisor_response(user_query, parsed, delivery_mode=delivery_mode)
                     else:
                         print(f"[AI Advisor] Gemini model {model_id} returned status {resp.status_code}")
                 except Exception as e:
                     print(f"[AI Advisor] Gemini model {model_id} failed: {e}")
         return None
 
-    async def _call_groq_advisor(self, user_query: str) -> Optional[AdvisorResponse]:
+    async def _call_groq_advisor(self, user_query: str, delivery_mode: str = "overdeliver") -> Optional[AdvisorResponse]:
         """
         Calls Groq Cloud with JSON mode and explicit schema.
         """
-        system_prompt = self._build_advisor_prompt(user_query)
+        system_prompt = self._build_advisor_prompt(user_query, delivery_mode=delivery_mode)
 
         async with httpx.AsyncClient(timeout=14.0) as client:
             resp = await client.post(
@@ -192,7 +226,7 @@ class AIAdvisorEngine:
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
                 parsed = json.loads(content)
-                return self._parse_to_advisor_response(user_query, parsed)
+                return self._parse_to_advisor_response(user_query, parsed, delivery_mode=delivery_mode)
         return None
 
     def _sanitize_prompt(self, prompt: str, user_query: str, phase: int, tool_name: str) -> str:
@@ -242,7 +276,126 @@ class AIAdvisorEngine:
             return "music_audio"
         return f"custom_{category}"
 
-    def _parse_to_advisor_response(self, user_query: str, parsed: Dict[str, Any]) -> AdvisorResponse:
+    def _generate_default_blind_spots(self, user_query: str) -> List[str]:
+        q = user_query.lower()
+        if any(w in q for w in ["kids", "child", "children", "toddler", "youtube kids", "yt kids"]):
+            return [
+                "COPPA & Policy Compliance: Marking content as 'Made for Kids' disables comments, personalized ads, and end-screens. Failure to comply can risk immediate FTC fines and YouTube channel termination.",
+                "The 15-Second Retention Drop: Children's attention spans are fleeting. Avoid static logo introductions; jump directly into motion, sound effects, or an interactive question within 3 seconds.",
+                "Acoustic Overstimulation Pitfall: While playful music is critical, harsh dissonant sounds or chaotic mixing cause sensory fatigue. Use soft marimba, ukulele, or bells at ~110-120 BPM mixed at -18dB under dialogue.",
+                "Color Contrast in Thumbnails: Toddlers and young children gravitate toward bright, saturated primary colors (yellow, cyan, magenta) with exaggerated joyful facial expressions.",
+                "The Repetitive Watchability Formula: Children re-watch videos 10-50 times when dialogue incorporates rhythmic repeating catchphrases or rhyming motifs."
+            ]
+        elif any(w in q for w in ["trading", "crypto", "finance", "bot", "algorithm", "stock", "arbitrage"]):
+            return [
+                "Slippage & Real-Time Liquidity Arbitrage: Paper trading backtests often fail in live markets because order book liquidity gaps and maker/taker exchange fees are ignored.",
+                "Exchange API Rate Limits & IP Bans: Centralized exchanges throttle rapid requests. A missing token bucket queue will ban your server IP address mid-execution.",
+                "Overfitting Backtest Curse: Optimizing strategy parameters to historical curve data creates false confidence. Always use Walk-Forward Cross Validation across distinct bull and bear regimes.",
+                "WebSocket State Desynchronization: Real-time order book event streams can drop packets silently. Implement sequence-number reconciliation and periodic REST snapshot syncs."
+            ]
+        elif any(w in q for w in ["code", "software", "saas", "api", "python", "app", "web"]):
+            return [
+                "Premature Optimization vs. Architecture Debt: Avoid building distributed microservices before core business logic and schema invariants are stabilized.",
+                "State Mutation & Concurrency Race Conditions: Unsynchronized global state leads to phantom data corruption under production traffic.",
+                "Defensive API Boundaries: Missing Pydantic / TypeScript schema validation on external inputs creates cascading type errors downstream.",
+                "Continuous Integration & Lint Gates: Automated formatting and type-checking prevent 70% of integration regressions before deployment."
+            ]
+        else:
+            return [
+                "Audience Attention Span & The Lead: Decision makers spend under 90 seconds reviewing summaries. Lead with bottom-line impact and measurable outcomes before methodology.",
+                "Data Hygiene & Verification: 80% of process failures stem from unnormalized inputs, missing timestamps, or unverified secondary sources.",
+                "Actionability Deficit: A metric without an operational intervention threshold is merely trivia. Pair every finding with a concrete next step.",
+                "Downstream Dependency Risk: Failing to define handoff contracts between phases causes bottleneck delays during handoffs."
+            ]
+
+    def _generate_default_starter_pack(self, user_query: str) -> Dict[str, Any]:
+        q = user_query.lower()
+        if any(w in q for w in ["kids", "child", "children", "toddler", "youtube kids", "yt kids"]):
+            return {
+                "pilot_starter_script": (
+                    "Title: The Magic Cloud's Raindrop Adventure (60s Pilot)\n\n"
+                    "[Visual: Vibrant, high-contrast 3D animated scene opens with a fluffy smiling cloud floating over green rolling hills]\n"
+                    "NARRATOR (Enthusiastic, playful, 135 WPM):\n"
+                    "\"Hello little explorers! Look up at the sky... Can you see the puffy white cloud? [Bell chime: Ding!]\n"
+                    "Meet Barnaby the Cloud! Today, Barnaby is full of tiny water drops. Let's count them together: 1... 2... 3! SPLASH! [Cheerful splash sound effect]\n"
+                    "Barnaby is bringing gentle rain to help the baby flowers grow! Can you wiggle your fingers like falling rain? Pitter-patter, pitter-patter!\n"
+                    "Great job! Barnaby is smiling! See you on our next weather adventure!\" [Cheerful outro chord]"
+                ),
+                "sensory_and_audio_formula": (
+                    "- Voice Profile: Warm, energetic maternal/paternal tone with dynamic pitch variation, 135-140 WPM.\n"
+                    "- Music Bed: Cheerful acoustic ukulele and bright xylophone, 115 BPM, master mix at -18dB under speech.\n"
+                    "- Sound Effects Palette: Organic soft bubble pops, pleasant rain trickles, gentle bell rings (avoid harsh buzzers)."
+                ),
+                "visual_style_and_thumbnail_prompt": (
+                    "Midjourney v6.1 Prompt: /imagine prompt: Vibrant 3D Pixar animation style, joyful smiling puffy cloud character holding a golden watering can, bright rainbow and green rolling hills in background, big curious expressive eyes, 8k resolution, cinematic soft lighting, 16:9 aspect ratio --ar 16:9 --v 6.1"
+                ),
+                "retention_and_launch_checklist": [
+                    "Always configure the COPPA rating to 'Yes, it's Made for Kids' in YouTube Studio upload defaults.",
+                    "Ensure voiceover repeats the central concept phrase at least 3 times in distinct scenes.",
+                    "Keep visual scene cuts between 2.0 to 3.0 seconds to maintain high toddler engagement.",
+                    "Test audio mix on phone and tablet speakers at 50% volume to ensure narration clarity."
+                ]
+            }
+        elif any(w in q for w in ["trading", "crypto", "finance", "bot", "algorithm", "stock", "arbitrage"]):
+            return {
+                "pilot_starter_script": (
+                    "# Python 3.12 Resilient Trading Loop Boilerplate with Backoff\n"
+                    "import asyncio, time\n\n"
+                    "class ResilientOrderExecutor:\n"
+                    "    def __init__(self, max_retries=3, risk_limit_pct=1.5):\n"
+                    "        self.max_retries = max_retries\n"
+                    "        self.risk_limit_pct = risk_limit_pct\n\n"
+                    "    async def execute_order_with_backoff(self, symbol, side, qty):\n"
+                    "        for attempt in range(1, self.max_retries + 1):\n"
+                    "            try:\n"
+                    "                print(f'[Order] {side} {qty} {symbol} (Attempt {attempt})')\n"
+                    "                return {'status': 'FILLED', 'symbol': symbol, 'qty': qty}\n"
+                    "            except Exception as e:\n"
+                    "                await asyncio.sleep(2 ** attempt)\n"
+                    "        raise RuntimeError('Max order placement retries exhausted.')\n"
+                ),
+                "sensory_and_audio_formula": (
+                    "- Risk Management Mandate: Never risk exceeding 1.5% of total portfolio equity per position.\n"
+                    "- Order Execution: Enforce hard server-side stop losses rather than relying on local client triggers.\n"
+                    "- Telemetry: Log slippage coefficients between expected quote and final fill price."
+                ),
+                "visual_style_and_thumbnail_prompt": (
+                    "Ideogram 2.0 Prompt: Clean dark mode algorithmic trading analytics dashboard UI, glowing neon emerald candlestick charts, glassmorphism telemetry widgets, 8k resolution, modern typography."
+                ),
+                "retention_and_launch_checklist": [
+                    "Verify paper trading performance across a minimum of 1,000 simulated trades before capital deployment.",
+                    "Isolate API secret keys inside encrypted environment variables with IP whitelisting enabled.",
+                    "Configure automated Discord or Telegram webhook alerts on all critical exception handlers."
+                ]
+            }
+        else:
+            return {
+                "pilot_starter_script": (
+                    "# Executive Strategic Briefing Matrix\n\n"
+                    "## 1. Executive Summary\n"
+                    "Concise 2-sentence distillation of the core objective and projected operational return.\n\n"
+                    "## 2. Problem Statement & Root Cause\n"
+                    "Clear diagnosis of the friction point, current benchmark, and target metric.\n\n"
+                    "## 3. Recommended Intervention Roadmap\n"
+                    "- Milestone 1: Baseline Architecture & Toolchain Alignment\n"
+                    "- Milestone 2: Pilot Implementation & Edge-Case Verification\n"
+                    "- Milestone 3: Full Deployment & Metric Tracking\n"
+                ),
+                "sensory_and_audio_formula": (
+                    "- Architecture: 1-Page Executive Summary, 3 Analytical Visuals, 1 Risk Appendix.\n"
+                    "- Formatting: High-contrast headings, bold primary takeaways, bulleted action items."
+                ),
+                "visual_style_and_thumbnail_prompt": (
+                    "Ideogram 2.0 Prompt: Modern minimalist executive presentation infographic poster, dark mode aesthetic, vibrant emerald accent bar charts, clean typography, 8k resolution."
+                ),
+                "retention_and_launch_checklist": [
+                    "Verify all baseline data inputs against secondary verification records.",
+                    "Establish unambiguous metric definitions before cross-functional distribution.",
+                    "Assign explicit SLA ownership to each milestone deliverable."
+                ]
+            }
+
+    def _parse_to_advisor_response(self, user_query: str, parsed: Dict[str, Any], delivery_mode: str = "overdeliver") -> AdvisorResponse:
         """
         Validates, enriches, deduplicates, and sorts into strongly-typed AdvisorResponse.
         Enforces:
@@ -250,6 +403,7 @@ class AIAdvisorEngine:
         2. Deduplication of multi-phase models into a single card with phase badges and per-phase prompts.
         3. Strict Top-1 model per capability job.
         4. Hallucination-free prompts with clear handoffs.
+        5. Anticipatory intelligence & starter packs in overdeliver mode.
         """
         from app.models.schemas import PhasePrompt
 
@@ -403,24 +557,20 @@ class AIAdvisorEngine:
                 )
 
         if not tool_map:
-            return self._deterministic_fallback(user_query)
+            return self._deterministic_fallback(user_query, delivery_mode=delivery_mode)
 
         # 3. Enforce TOP 1 BEST AI per work/capability:
-        # If multiple tools share the same capability cluster (e.g. text reasoning) and overlap phases, keep only top 1
         cluster_map: Dict[str, ToolRecommendation] = {}
         filtered_tools: List[ToolRecommendation] = []
 
         for tool in tool_map.values():
             cluster = self._get_capability_cluster(tool.tool_name, tool.category)
             if cluster in cluster_map:
-                # Same capability cluster already present!
-                # Merge any unique phases into the chosen top-1 model instead of having duplicate AI models for the same job
                 retained = cluster_map[cluster]
                 for p_num in tool.assigned_phases:
                     if p_num not in retained.assigned_phases:
                         retained.assigned_phases.append(p_num)
                 retained.assigned_phases.sort()
-                # Copy any missing phase prompts over
                 retained_phases_set = {p.phase for p in retained.phase_prompts}
                 for pp in tool.phase_prompts:
                     if pp.phase not in retained_phases_set:
@@ -471,20 +621,44 @@ class AIAdvisorEngine:
                     "expected_output": expected
                 })
 
+        # 6. Extract Anticipated Blind Spots and Complimentary Starter Pack
+        anticipated_blind_spots: List[str] = []
+        complimentary_starter_pack: Dict[str, Any] = {}
+
+        if delivery_mode == "overdeliver":
+            raw_spots = parsed.get("anticipated_blind_spots") or parsed.get("blind_spots") or []
+            if isinstance(raw_spots, list) and raw_spots:
+                anticipated_blind_spots = [str(s) for s in raw_spots if s]
+            else:
+                anticipated_blind_spots = self._generate_default_blind_spots(user_query)
+
+            raw_pack = parsed.get("complimentary_starter_pack") or parsed.get("starter_pack") or {}
+            if isinstance(raw_pack, dict) and raw_pack:
+                complimentary_starter_pack = raw_pack
+            else:
+                complimentary_starter_pack = self._generate_default_starter_pack(user_query)
+        else:
+            anticipated_blind_spots = []
+            complimentary_starter_pack = {}
+
         return AdvisorResponse(
             original_query=user_query,
             task_decomposition=decomposition,
             recommendations=filtered_tools,
-            diy_execution_blueprint=formatted_blueprints
+            diy_execution_blueprint=formatted_blueprints,
+            delivery_mode=delivery_mode,
+            anticipated_blind_spots=anticipated_blind_spots,
+            complimentary_starter_pack=complimentary_starter_pack
         )
 
-    def _deterministic_fallback(self, user_query: str) -> AdvisorResponse:
+    def _deterministic_fallback(self, user_query: str, delivery_mode: str = "overdeliver") -> AdvisorResponse:
         """
         Dynamic semantic fallback adhering strictly to:
         1. Chronological phase order
         2. Top 1 AI per capability
         3. Multi-phase deduplication with phase badges & phase prompts
         4. Clear handoff placeholders without hallucinations
+        5. Anticipatory intelligence & starter pack in overdeliver mode
         """
         from app.models.schemas import PhasePrompt
 
@@ -758,9 +932,17 @@ class AIAdvisorEngine:
                 "expected_output": f"Verified deliverables for Phase {', '.join(map(str, rec.assigned_phases))}"
             })
 
+        anticipated_blind_spots = self._generate_default_blind_spots(user_query) if delivery_mode == "overdeliver" else []
+        complimentary_starter_pack = self._generate_default_starter_pack(user_query) if delivery_mode == "overdeliver" else {}
+
         return AdvisorResponse(
             original_query=user_query,
             task_decomposition=decomposition,
             recommendations=recommendations,
-            diy_execution_blueprint=diy_blueprint
+            diy_execution_blueprint=diy_blueprint,
+            delivery_mode=delivery_mode,
+            anticipated_blind_spots=anticipated_blind_spots,
+            complimentary_starter_pack=complimentary_starter_pack
         )
+
+advisor_engine = AIAdvisorEngine()

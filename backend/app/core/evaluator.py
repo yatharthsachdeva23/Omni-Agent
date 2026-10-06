@@ -1,19 +1,21 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 from app.models.schemas import (
     FinalEvaluationResult,
     BlackboardState,
 )
+from app.advisor.recommender import advisor_engine
 
 class FinalEvaluationAgent:
     """
     Step 4: Final Reviewer & Evaluation Agent.
     Evaluates the aggregated output bundle against the user's initial natural language request.
     Computes an objective completion score (0-100%) and packages deliverables for the user.
+    Supports 'overdeliver' (anticipatory intelligence + gifts) and 'strict' modes.
     """
     def __init__(self, model_name: str = "Omni-FinalEvaluator-v1"):
         self.model_name = model_name
 
-    def evaluate(self, blackboard_state: BlackboardState) -> FinalEvaluationResult:
+    def evaluate(self, blackboard_state: BlackboardState, delivery_mode: str = "overdeliver") -> FinalEvaluationResult:
         prompt = blackboard_state.original_prompt
         completed_outputs = blackboard_state.completed_outputs
         intermediate_reviews = blackboard_state.intermediate_reviews
@@ -53,6 +55,7 @@ class FinalEvaluationAgent:
         jev_lat = blackboard_state.structured_goal.jev_routing_latency_ms if blackboard_state.structured_goal else 0.0
         internal_audit_notes = [
             f"Execution session: {blackboard_state.session_id}",
+            f"Delivery Mode: {delivery_mode.upper()}",
             f"Total Sub-tasks Executed: {len(completed_outputs)}",
             f"Jev System 1 Routing Latency: {jev_lat:.1f}ms",
             f"Intermediate QA Pass Rate: {pass_percentage}% ({passed_reviews}/{total_reviews} tasks approved)",
@@ -77,13 +80,28 @@ class FinalEvaluationAgent:
                 "artifacts": worker_res.artifacts
             }
 
+        # Anticipatory Intelligence & Complimentary Starter Pack
+        anticipated_blind_spots: List[str] = []
+        complimentary_starter_pack: Dict[str, Any] = {}
+        if delivery_mode == "overdeliver":
+            anticipated_blind_spots = advisor_engine._generate_default_blind_spots(prompt)
+            complimentary_starter_pack = advisor_engine._generate_default_starter_pack(prompt)
+
         if completion_score >= 60:
-            summary_for_user = (
-                f"Your request has been successfully executed with an overall completion score of {completion_score}%.\n\n"
-                f"All {len(completed_outputs)} sub-tasks were structured via Jev System 1 routing, executed by specialized "
-                "worker models, rigorously vetted by domain-matched intermediate reviewers, and synchronized through the "
-                "Common Context Blackboard memory."
-            )
+            if delivery_mode == "overdeliver":
+                summary_for_user = (
+                    f"Your request has been successfully executed with an overall completion score of {completion_score}%.\n\n"
+                    f"All {len(completed_outputs)} sub-tasks were structured via Jev System 1 routing, executed by specialized "
+                    "worker models, rigorously vetted by domain-matched intermediate reviewers, and synchronized through the "
+                    "Common Context Blackboard memory.\n\n"
+                    "✨ **Overdeliver Bonus**: Omni has assembled anticipated blind spots, launch pitfalls, and a complimentary "
+                    "production starter pack to accelerate your implementation."
+                )
+            else:
+                summary_for_user = (
+                    f"Your request has been executed directly with an overall completion score of {completion_score}%.\n\n"
+                    f"All {len(completed_outputs)} core sub-tasks were executed strictly to your exact specification."
+                )
         else:
             summary_for_user = (
                 f"Workflow execution completed with an overall score of {completion_score}%. One or more sub-agents "
@@ -96,5 +114,8 @@ class FinalEvaluationAgent:
             compliance_breakdown=compliance_breakdown,
             internal_audit_notes=internal_audit_notes,
             summary_for_user=summary_for_user,
-            deliverables=deliverables
+            deliverables=deliverables,
+            delivery_mode=delivery_mode,
+            anticipated_blind_spots=anticipated_blind_spots,
+            complimentary_starter_pack=complimentary_starter_pack
         )

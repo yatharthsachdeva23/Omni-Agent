@@ -63,12 +63,25 @@ export interface NegativeKnowledgeItem {
   prevention_directive_for_downstream: string;
 }
 
+export type DeliveryMode = 'overdeliver' | 'strict';
+
+export interface ComplimentaryStarterPack {
+  pilot_starter_script?: string;
+  sensory_and_audio_formula?: string;
+  visual_style_and_thumbnail_prompt?: string;
+  retention_and_launch_checklist?: string[];
+  [key: string]: any;
+}
+
 export interface FinalEvaluationResult {
   overall_completion_score: number;
   compliance_breakdown: Record<string, number>;
   internal_audit_notes: string[];
   summary_for_user: string;
   deliverables: Record<string, any>;
+  delivery_mode?: DeliveryMode;
+  anticipated_blind_spots?: string[];
+  complimentary_starter_pack?: ComplimentaryStarterPack;
 }
 
 export interface BlackboardSnapshot {
@@ -119,6 +132,9 @@ export interface AdvisorResponse {
     input?: string;
     expected_output?: string;
   }>;
+  delivery_mode?: DeliveryMode;
+  anticipated_blind_spots?: string[];
+  complimentary_starter_pack?: ComplimentaryStarterPack;
 }
 
 export interface PlanClarifyingQuestion {

@@ -74,9 +74,12 @@ async def get_tools_catalog():
 @app.post("/api/advisor/suggest", response_model=AdvisorResponse)
 async def get_ai_advice(payload: dict):
     prompt = payload.get("prompt", "").strip()
+    delivery_mode = str(payload.get("delivery_mode", "overdeliver")).strip().lower()
+    if delivery_mode not in ["overdeliver", "strict"]:
+        delivery_mode = "overdeliver"
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt is required")
-    response = await advisor_engine.advise_async(prompt)
+    response = await advisor_engine.advise_async(prompt, delivery_mode=delivery_mode)
     return response
 
 from app.utils.file_parser import extract_text_from_file_bytes

@@ -6,7 +6,8 @@ import {
   Play,
   Paperclip,
   Sparkles,
-  HelpCircle
+  HelpCircle,
+  Target
 } from 'lucide-react';
 import {
   IngestedFile,
@@ -14,7 +15,8 @@ import {
   BlackboardSnapshot,
   FinalEvaluationResult,
   StructuredSubTask,
-  InteractivePlanResponse
+  InteractivePlanResponse,
+  DeliveryMode
 } from '../types';
 import { LiveExecutionVisualizer } from './LiveExecutionVisualizer';
 import { InteractivePlanCard } from './InteractivePlanCard';
@@ -24,17 +26,21 @@ interface Track2ExecutionProps {
     prompt: string;
     files: IngestedFile[];
     askBeforeDoing: boolean;
+    deliveryMode?: DeliveryMode;
     clarifications?: Record<string, string>;
     approvedPlanSummary?: string;
   }) => void;
   initialPrompt?: string;
+  initialDeliveryMode?: DeliveryMode;
 }
 
 export const Track2Execution: React.FC<Track2ExecutionProps> = ({
   onLaunchExecution,
-  initialPrompt = ''
+  initialPrompt = '',
+  initialDeliveryMode = 'overdeliver'
 }) => {
   const [prompt, setPrompt] = useState(initialPrompt);
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(initialDeliveryMode);
   const [files, setFiles] = useState<IngestedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -161,6 +167,7 @@ export const Track2Execution: React.FC<Track2ExecutionProps> = ({
         prompt: taskPrompt,
         files: files,
         askBeforeDoing: askBeforeDoing,
+        deliveryMode: deliveryMode,
         clarifications: clarifications || (interactivePlan ? userAnswers : undefined),
         approvedPlanSummary: planSummary || (interactivePlan ? interactivePlan.architectural_approach : undefined)
       });
@@ -183,6 +190,7 @@ export const Track2Execution: React.FC<Track2ExecutionProps> = ({
           prompt: taskPrompt,
           files: files,
           mode: 'paid',
+          delivery_mode: deliveryMode,
           allow_simulation: true,
           ask_before_doing: askBeforeDoing,
           user_clarifications: clarifications || (interactivePlan ? userAnswers : undefined),
@@ -355,6 +363,37 @@ export const Track2Execution: React.FC<Track2ExecutionProps> = ({
                 {askBeforeDoing ? 'ON' : 'OFF'}
               </span>
             </button>
+
+            {/* TOGGLE: Delivery Mode */}
+            <div className="inline-flex items-center p-0.5 rounded-xl bg-white/[0.04] border border-white/[0.08] gap-1">
+              <button
+                type="button"
+                onClick={() => setDeliveryMode('overdeliver')}
+                disabled={isExecuting || isPlanning}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  deliveryMode === 'overdeliver'
+                    ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/10 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Overdeliver</span>
+                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300">Rec</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeliveryMode('strict')}
+                disabled={isExecuting || isPlanning}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  deliveryMode === 'strict'
+                    ? 'bg-white/10 text-white border border-white/20 shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <Target className="w-3.5 h-3.5 text-neutral-400" />
+                <span>Strict</span>
+              </button>
+            </div>
 
             {files.map((file, idx) => (
               <div

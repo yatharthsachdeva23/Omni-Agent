@@ -20,7 +20,8 @@ import {
   BlackboardSnapshot,
   StructuredSubTask,
   FinalEvaluationResult,
-  TaskStatus
+  TaskStatus,
+  DeliveryMode
 } from '../types';
 import { LiveExecutionVisualizer } from './LiveExecutionVisualizer';
 
@@ -28,6 +29,7 @@ interface WorkerWorkspaceProps {
   prompt: string;
   files: IngestedFile[];
   askBeforeDoing: boolean;
+  deliveryMode?: DeliveryMode;
   clarifications?: Record<string, string>;
   approvedPlanSummary?: string;
   onBack: () => void;
@@ -38,11 +40,13 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
   prompt,
   files,
   askBeforeDoing,
+  deliveryMode = 'overdeliver',
   clarifications,
   approvedPlanSummary,
   onBack,
   onRunAgain
 }) => {
+  const [currentDeliveryMode, setCurrentDeliveryMode] = useState<DeliveryMode>(deliveryMode);
   const [isExecuting, setIsExecuting] = useState<boolean>(true);
   const [currentStage, setCurrentStage] = useState<string>('STARTING');
   const [stageMessage, setStageMessage] = useState<string>('Initializing OmniTask AI execution pipeline...');
@@ -89,6 +93,7 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
             prompt: prompt,
             files: files,
             mode: 'paid',
+            delivery_mode: currentDeliveryMode,
             allow_simulation: true,
             ask_before_doing: askBeforeDoing,
             user_clarifications: clarifications,
@@ -214,6 +219,13 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
             <img src="/omnitask-logo.png" alt="OmniTask AI" className="h-5 w-auto object-contain" />
             <span className="text-[11px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
               Track 2 &bull; Autonomous Swarm Workspace
+            </span>
+            <span className={`hidden sm:inline-block text-[11px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border ${
+              currentDeliveryMode === 'overdeliver'
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                : 'bg-white/10 text-white border-white/20'
+            }`}>
+              {currentDeliveryMode === 'overdeliver' ? '✨ Overdeliver Mode' : '🎯 Strict Mode'}
             </span>
           </div>
         </div>
