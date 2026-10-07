@@ -268,6 +268,8 @@ class JSONStructurerAgent:
             if domain == DomainType.AUDIT:
                 if any(w in desc.lower() or w in title.lower() for w in ["summariz", "summary"]):
                     worker = "Gemini 2.0 Flash (Summarizer Specialist)"
+                elif any(w in desc.lower() or w in title.lower() for w in ["compar", "tradeoff", "differ", "suitability", "profile"]):
+                    worker = "Mistral (Legal & Formal Logic Specialist)"
                 else:
                     worker = "OpenAI GPT (Auditing Specialist)"
             elif domain == DomainType.CODE:

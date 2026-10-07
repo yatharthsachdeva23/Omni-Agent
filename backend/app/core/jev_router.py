@@ -146,6 +146,8 @@ class JevFastRouter:
             elif domain_str in ["audit", "general"]:
                 if "summary" in task.title.lower() or "summariz" in task.description.lower():
                     worker_model = self.worker_dispatch_table["summary"]
+                elif any(w in task.title.lower() or w in task.description.lower() for w in ["compar", "tradeoff", "differ", "suitability", "profile"]):
+                    worker_model = self.worker_dispatch_table["legal_logic"]
                 else:
                     worker_model = self.worker_dispatch_table["audit"]
             elif domain_str in ["math", "legal_logic"]:
@@ -212,6 +214,8 @@ class JevFastRouter:
                         worker = self.worker_dispatch_table["legal_logic"]
                     elif "summary" in task.title.lower() or "summariz" in task.description.lower():
                         worker = self.worker_dispatch_table["summary"]
+                    elif any(w in task.title.lower() or w in task.description.lower() for w in ["compar", "tradeoff", "differ", "suitability", "profile"]):
+                        worker = self.worker_dispatch_table["legal_logic"]
                     else:
                         worker = self.worker_dispatch_table["audit"]
 

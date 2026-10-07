@@ -414,10 +414,41 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                             {task.retry_count + 1}/5 tries
                           </span>
                         ) : null}
-                        <span className="text-[10px] text-emerald-400 font-mono px-2 py-0.5 rounded bg-emerald-500/[0.08] border border-emerald-500/20">
-                          {review?.reviewer_model ? review.reviewer_model.split(' ')[0] : 'Gemini'} QA {review?.quality_score}%
-                        </span>
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        {(() => {
+                          const score = review?.quality_score ?? 0;
+                          const isPassed = review?.passed !== false && score >= 85;
+                          const isWarning = score >= 70 && score < 85;
+                          const revName = review?.reviewer_model ? review.reviewer_model.split(' ')[0] : 'QA';
+
+                          if (isPassed) {
+                            return (
+                              <>
+                                <span className="text-[10px] text-emerald-400 font-mono px-2 py-0.5 rounded bg-emerald-500/[0.08] border border-emerald-500/20">
+                                  {revName} QA {score}%
+                                </span>
+                                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                              </>
+                            );
+                          } else if (isWarning) {
+                            return (
+                              <>
+                                <span className="text-[10px] text-amber-400 font-mono px-2 py-0.5 rounded bg-amber-500/[0.1] border border-amber-500/20">
+                                  {revName} QA {score}%
+                                </span>
+                                <AlertCircle className="w-4 h-4 text-amber-400" />
+                              </>
+                            );
+                          } else {
+                            return (
+                              <>
+                                <span className="text-[10px] text-rose-400 font-mono px-2 py-0.5 rounded bg-rose-500/[0.1] border border-rose-500/20">
+                                  {revName} QA {score}%
+                                </span>
+                                <AlertCircle className="w-4 h-4 text-rose-400" />
+                              </>
+                            );
+                          }
+                        })()}
                       </div>
                     ) : (
                       <span className="text-[11px] text-neutral-600 font-mono">Pending</span>
@@ -540,41 +571,54 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                     })()}
 
                     {/* Dedicated Reviewer Inspection Card */}
-                    {review && (
-                      <div className={`p-3.5 rounded-xl bg-white/[0.02] border ${review.quality_score >= 85 ? 'border-emerald-500/30' : 'border-amber-500/40'} space-y-2`}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <ShieldCheck className={`w-3.5 h-3.5 ${review.quality_score >= 85 ? 'text-emerald-400' : 'text-amber-400'}`} />
-                            <span className={`text-[11px] font-mono font-medium ${review.quality_score >= 85 ? 'text-emerald-400' : 'text-amber-400'} uppercase tracking-wider`}>
-                              Dedicated Reviewer Gate: {review.reviewer_model}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {review.quality_score < 85 && (
-                              <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                Minimum 85% Required
+                    {review && (() => {
+                      const score = review.quality_score ?? 0;
+                      const isPassed = review.passed !== false && score >= 85;
+                      const isWarning = score >= 70 && score < 85;
+                      const borderColor = isPassed ? 'border-emerald-500/30' : isWarning ? 'border-amber-500/40' : 'border-rose-500/40';
+                      const textColor = isPassed ? 'text-emerald-400' : isWarning ? 'text-amber-400' : 'text-rose-400';
+                      const badgeStyle = isPassed
+                        ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
+                        : isWarning
+                        ? 'text-amber-300 bg-amber-500/10 border-amber-500/20'
+                        : 'text-rose-300 bg-rose-500/10 border-rose-500/20';
+
+                      return (
+                        <div className={`p-3.5 rounded-xl bg-white/[0.02] border ${borderColor} space-y-2`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <ShieldCheck className={`w-3.5 h-3.5 ${textColor}`} />
+                              <span className={`text-[11px] font-mono font-medium ${textColor} uppercase tracking-wider`}>
+                                Dedicated Reviewer Gate: {review.reviewer_model}
                               </span>
-                            )}
-                            <span className={`text-[10px] font-mono ${review.quality_score >= 85 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' : 'text-amber-300 bg-amber-500/10 border-amber-500/20'} px-2 py-0.5 rounded border`}>
-                              Score: {review.quality_score}/100 ({review.status ? review.status.toUpperCase() : (review.quality_score >= 85 ? 'APPROVED' : 'REJECTED')})
-                            </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {score < 85 && (
+                                <span className={`text-[10px] font-mono ${isWarning ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-rose-400 bg-rose-500/10 border-rose-500/20'} px-2 py-0.5 rounded border`}>
+                                  Minimum 85% Required
+                                </span>
+                              )}
+                              <span className={`text-[10px] font-mono ${badgeStyle} px-2 py-0.5 rounded border`}>
+                                Score: {score}/100 ({review.status ? review.status.toUpperCase() : (isPassed ? 'APPROVED' : 'REJECTED')})
+                              </span>
+                            </div>
                           </div>
+                          <p className="text-xs text-neutral-300 font-mono whitespace-pre-wrap">
+                            {review.critique}
+                          </p>
+                          {review.reviewer_regenerate_prompt && (
+                            <div className="mt-2 p-3 rounded-lg bg-amber-500/[0.06] border border-amber-500/20 space-y-1">
+                              <span className="text-[10px] font-mono text-amber-400 uppercase tracking-wider font-semibold block">
+                                Reviewer Corrective Prompt (Used for Auto-Regeneration):
+                              </span>
+                              <p className="text-xs text-amber-200/90 font-mono leading-relaxed">
+                                {review.reviewer_regenerate_prompt}
+                              </p>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-xs text-neutral-300 font-mono whitespace-pre-wrap">
-                          {review.critique}
-                        </p>
-                        {review.reviewer_regenerate_prompt && (
-                          <div className="mt-2 p-3 rounded-lg bg-amber-500/[0.06] border border-amber-500/20 space-y-1">
-                            <span className="text-[10px] font-mono text-amber-400 uppercase tracking-wider font-semibold block">
-                              Reviewer Corrective Prompt (Used for Auto-Regeneration):
-                            </span>
-                            <p className="text-xs text-amber-200/90 font-mono leading-relaxed">
-                              {review.reviewer_regenerate_prompt}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 )}
               </div>
