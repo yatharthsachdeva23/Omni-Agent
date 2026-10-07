@@ -250,7 +250,8 @@ class OmniOrchestrator:
         })
         await asyncio.sleep(0.5)
 
-        delivery_mode = getattr(request, "delivery_mode", "overdeliver") or "overdeliver"
+        raw_mode = getattr(request, "delivery_mode", "smart") or "smart"
+        delivery_mode = "strict" if str(raw_mode).lower() == "strict" else "smart"
         evaluation = self.evaluator.evaluate(blackboard.get_state(), delivery_mode=delivery_mode)
         yield self._format_sse("EXECUTION_COMPLETED", {
             "session_id": session_id,

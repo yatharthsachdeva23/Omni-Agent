@@ -13,7 +13,7 @@ type AppView = 'landing' | 'analyzer-workspace' | 'worker-workspace';
 
 export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<AppView>('landing');
-  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('overdeliver');
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('smart');
   const [analyzerPrompt, setAnalyzerPrompt] = useState<string>('');
   const [workerPrompt, setWorkerPrompt] = useState<string>('');
   const [workerFiles, setWorkerFiles] = useState<IngestedFile[]>([]);
@@ -301,7 +301,7 @@ export const App: React.FC = () => {
               initialDeliveryMode={deliveryMode}
               onGenerate={(p, mode) => {
                 setAnalyzerPrompt(p);
-                setDeliveryMode(mode || 'overdeliver');
+                setDeliveryMode(mode || 'smart');
                 setActiveView('analyzer-workspace');
               }}
               initialPrompt={analyzerPrompt}

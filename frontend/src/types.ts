@@ -63,7 +63,7 @@ export interface NegativeKnowledgeItem {
   prevention_directive_for_downstream: string;
 }
 
-export type DeliveryMode = 'overdeliver' | 'strict';
+export type DeliveryMode = 'smart' | 'strict' | 'overdeliver';
 
 export interface ComplimentaryStarterPack {
   pilot_starter_script?: string;

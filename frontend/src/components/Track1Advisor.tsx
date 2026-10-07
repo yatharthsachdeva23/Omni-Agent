@@ -11,7 +11,7 @@ interface Track1AdvisorProps {
 export const Track1Advisor: React.FC<Track1AdvisorProps> = ({
   onGenerate,
   initialPrompt = '',
-  initialDeliveryMode = 'overdeliver'
+  initialDeliveryMode = 'smart'
 }) => {
   const [prompt, setPrompt] = useState(initialPrompt);
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(initialDeliveryMode);
@@ -89,15 +89,15 @@ export const Track1Advisor: React.FC<Track1AdvisorProps> = ({
           <div className="inline-flex items-center p-1 rounded-xl bg-[#030303] border border-white/[0.08] gap-1">
             <button
               type="button"
-              onClick={() => setDeliveryMode('overdeliver')}
+              onClick={() => setDeliveryMode('smart')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                deliveryMode === 'overdeliver'
+                deliveryMode === 'smart' || deliveryMode === 'overdeliver'
                   ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/10 text-emerald-300 border border-emerald-500/30 shadow-sm'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
               <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Overdeliver Mode</span>
+              <span>Smart Mode</span>
               <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Recommended</span>
             </button>
 

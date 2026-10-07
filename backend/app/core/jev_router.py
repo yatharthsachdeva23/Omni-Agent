@@ -28,6 +28,8 @@ class JevFastRouter:
             "legal_logic": "Mistral (Legal & Formal Logic Specialist)",
             "audit": "OpenAI GPT (Auditing Specialist)",
             "vision": "Flux.1 (Visual Asset Specialist)",
+            "audio": "Meta MusicGen & Suno AI (Music & Audio Specialist)",
+            "video": "Kling AI & CogVideoX (Motion & Video Specialist)",
             "math": "Mistral & Formal Logic"
         }
 
@@ -55,7 +57,9 @@ class JevFastRouter:
                                 "code": "Tasks requiring software development, Python scripts, or APIs",
                                 "math": "Tasks requiring mathematical modeling, equations, or statistical derivation",
                                 "audit": "Tasks requiring synthesis, verification, or audit reports",
-                                "vision": "Tasks requiring visual images or diagrams"
+                                "vision": "Tasks requiring visual images or diagrams",
+                                "audio": "Tasks requiring background music, songs, or sound effects",
+                                "video": "Tasks requiring video generation, camera motion, or animation clips"
                             }
                         },
                         "requires_coding": {
@@ -103,6 +107,10 @@ class JevFastRouter:
                 worker_model = self.worker_dispatch_table["legal_logic"]
             elif domain_str == "vision":
                 worker_model = self.worker_dispatch_table["vision"]
+            elif domain_str == "audio":
+                worker_model = self.worker_dispatch_table["audio"]
+            elif domain_str == "video":
+                worker_model = self.worker_dispatch_table["video"]
             else:
                 worker_model = self.worker_dispatch_table["summary"]
 
@@ -144,6 +152,10 @@ class JevFastRouter:
                         worker = self.worker_dispatch_table["code"]
                     elif domain_str == "vision":
                         worker = self.worker_dispatch_table["vision"]
+                    elif domain_str == "audio":
+                        worker = self.worker_dispatch_table["audio"]
+                    elif domain_str == "video":
+                        worker = self.worker_dispatch_table["video"]
                     elif domain_str == "math":
                         worker = self.worker_dispatch_table["legal_logic"]
                     elif "summary" in task.title.lower():

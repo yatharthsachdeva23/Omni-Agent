@@ -15,7 +15,7 @@ class FinalEvaluationAgent:
     def __init__(self, model_name: str = "Omni-FinalEvaluator-v1"):
         self.model_name = model_name
 
-    def evaluate(self, blackboard_state: BlackboardState, delivery_mode: str = "overdeliver") -> FinalEvaluationResult:
+    def evaluate(self, blackboard_state: BlackboardState, delivery_mode: str = "smart") -> FinalEvaluationResult:
         prompt = blackboard_state.original_prompt
         completed_outputs = blackboard_state.completed_outputs
         intermediate_reviews = blackboard_state.intermediate_reviews
@@ -83,18 +83,19 @@ class FinalEvaluationAgent:
         # Anticipatory Intelligence & Complimentary Starter Pack
         anticipated_blind_spots: List[str] = []
         complimentary_starter_pack: Dict[str, Any] = {}
-        if delivery_mode == "overdeliver":
+        is_smart_mode = delivery_mode in ["smart", "overdeliver"]
+        if is_smart_mode:
             anticipated_blind_spots = advisor_engine._generate_default_blind_spots(prompt)
             complimentary_starter_pack = advisor_engine._generate_default_starter_pack(prompt)
 
         if completion_score >= 60:
-            if delivery_mode == "overdeliver":
+            if is_smart_mode:
                 summary_for_user = (
                     f"Your request has been successfully executed with an overall completion score of {completion_score}%.\n\n"
                     f"All {len(completed_outputs)} sub-tasks were structured via Jev System 1 routing, executed by specialized "
                     "worker models, rigorously vetted by domain-matched intermediate reviewers, and synchronized through the "
                     "Common Context Blackboard memory.\n\n"
-                    "✨ **Overdeliver Bonus**: Omni has assembled anticipated blind spots, launch pitfalls, and a complimentary "
+                    "✨ **Smart Mode Intelligence**: Omni has assembled anticipated blind spots, launch pitfalls, and a complimentary "
                     "production starter pack to accelerate your implementation."
                 )
             else:

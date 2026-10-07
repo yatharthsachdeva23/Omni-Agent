@@ -38,7 +38,7 @@ export const AnalyzerWorkspace: React.FC<AnalyzerWorkspaceProps> = ({
   onRunAgain,
   onDeployToWorkerPool,
   existingResult = null,
-  initialDeliveryMode = 'overdeliver'
+  initialDeliveryMode = 'smart'
 }) => {
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(existingResult?.delivery_mode || initialDeliveryMode);
   const [result, setResult] = useState<AdvisorResponse | null>(existingResult);
@@ -69,7 +69,8 @@ export const AnalyzerWorkspace: React.FC<AnalyzerWorkspaceProps> = ({
     const fetchAdvice = async () => {
       setLoading(true);
       setProgress(15);
-      setStatusMessage(`Parsing constraints (${deliveryMode === 'overdeliver' ? 'Overdeliver Mode' : 'Strict Mode'})...`);
+      const isSmart = deliveryMode === 'smart' || deliveryMode === 'overdeliver';
+      setStatusMessage(`Parsing constraints (${isSmart ? 'Smart Mode' : 'Strict Mode'})...`);
 
       // Dynamic progress step timers
       const t1 = setTimeout(() => {
@@ -89,7 +90,7 @@ export const AnalyzerWorkspace: React.FC<AnalyzerWorkspaceProps> = ({
       const t3 = setTimeout(() => {
         if (isMounted) {
           setProgress(90);
-          setStatusMessage(deliveryMode === 'overdeliver'
+          setStatusMessage(isSmart
             ? 'Synthesizing prompt blueprints, anticipated blind spots & free starter gifts...'
             : 'Synthesizing concise prompt blueprints & DIY roadmap...');
         }
@@ -110,7 +111,7 @@ export const AnalyzerWorkspace: React.FC<AnalyzerWorkspaceProps> = ({
           clearTimeout(t2);
           clearTimeout(t3);
           setProgress(100);
-          setStatusMessage(`Blueprint Synthesized Successfully (${deliveryMode === 'overdeliver' ? '✨ Overdeliver Mode' : '🎯 Strict Mode'})`);
+          setStatusMessage(`Blueprint Synthesized Successfully (${isSmart ? '✨ Smart Mode' : '🎯 Strict Mode'})`);
           setResult(data);
           setLoading(false);
         }
@@ -268,19 +269,19 @@ ${result.diy_execution_blueprint
             <button
               type="button"
               onClick={() => {
-                if (deliveryMode !== 'overdeliver') {
-                  setDeliveryMode('overdeliver');
+                if (deliveryMode !== 'smart' && deliveryMode !== 'overdeliver') {
+                  setDeliveryMode('smart');
                   setResult(null);
                 }
               }}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                deliveryMode === 'overdeliver'
+                deliveryMode === 'smart' || deliveryMode === 'overdeliver'
                   ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/10 text-emerald-300 border border-emerald-500/30 shadow-sm'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
               <Sparkles className="w-3 h-3 text-emerald-400" />
-              <span>Overdeliver</span>
+              <span>Smart Mode</span>
             </button>
             <button
               type="button"
@@ -458,7 +459,7 @@ ${result.diy_execution_blueprint
                 <span>Milestone Roadmap ({result.diy_execution_blueprint.length} Steps)</span>
               </button>
 
-              {result.delivery_mode === 'overdeliver' && ((result.anticipated_blind_spots && result.anticipated_blind_spots.length > 0) || (result.complimentary_starter_pack && Object.keys(result.complimentary_starter_pack).length > 0)) && (
+              {(result.delivery_mode === 'smart' || result.delivery_mode === 'overdeliver') && ((result.anticipated_blind_spots && result.anticipated_blind_spots.length > 0) || (result.complimentary_starter_pack && Object.keys(result.complimentary_starter_pack).length > 0)) && (
                 <button
                   onClick={() => setActiveTab('bonus')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all ${
@@ -701,7 +702,7 @@ ${result.diy_execution_blueprint
             )}
 
             {/* TAB CONTENT: ANTICIPATED BLIND SPOTS & COMPLIMENTARY STARTER PACK */}
-            {(activeTab === 'all' || activeTab === 'bonus') && result.delivery_mode === 'overdeliver' && (
+            {(activeTab === 'all' || activeTab === 'bonus') && (result.delivery_mode === 'smart' || result.delivery_mode === 'overdeliver') && (
               <div className="space-y-8">
                 {/* 04: ANTICIPATED BLIND SPOTS */}
                 {result.anticipated_blind_spots && result.anticipated_blind_spots.length > 0 && (

@@ -37,7 +37,7 @@ interface Track2ExecutionProps {
 export const Track2Execution: React.FC<Track2ExecutionProps> = ({
   onLaunchExecution,
   initialPrompt = '',
-  initialDeliveryMode = 'overdeliver'
+  initialDeliveryMode = 'smart'
 }) => {
   const [prompt, setPrompt] = useState(initialPrompt);
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(initialDeliveryMode);
@@ -368,16 +368,16 @@ export const Track2Execution: React.FC<Track2ExecutionProps> = ({
             <div className="inline-flex items-center p-0.5 rounded-xl bg-white/[0.04] border border-white/[0.08] gap-1">
               <button
                 type="button"
-                onClick={() => setDeliveryMode('overdeliver')}
+                onClick={() => setDeliveryMode('smart')}
                 disabled={isExecuting || isPlanning}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  deliveryMode === 'overdeliver'
+                  deliveryMode === 'smart' || deliveryMode === 'overdeliver'
                     ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/10 text-emerald-300 border border-emerald-500/30 shadow-sm'
                     : 'text-neutral-400 hover:text-white'
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Overdeliver</span>
+                <span>Smart Mode</span>
                 <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300">Rec</span>
               </button>
               <button

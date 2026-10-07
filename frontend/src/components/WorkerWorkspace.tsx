@@ -40,7 +40,7 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
   prompt,
   files,
   askBeforeDoing,
-  deliveryMode = 'overdeliver',
+  deliveryMode = 'smart',
   clarifications,
   approvedPlanSummary,
   onBack,
@@ -221,11 +221,11 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
               Track 2 &bull; Autonomous Swarm Workspace
             </span>
             <span className={`hidden sm:inline-block text-[11px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border ${
-              currentDeliveryMode === 'overdeliver'
+              currentDeliveryMode === 'smart' || currentDeliveryMode === 'overdeliver'
                 ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
                 : 'bg-white/10 text-white border-white/20'
             }`}>
-              {currentDeliveryMode === 'overdeliver' ? '✨ Overdeliver Mode' : '🎯 Strict Mode'}
+              {currentDeliveryMode === 'smart' || currentDeliveryMode === 'overdeliver' ? '✨ Smart Mode' : '🎯 Strict Mode'}
             </span>
           </div>
         </div>

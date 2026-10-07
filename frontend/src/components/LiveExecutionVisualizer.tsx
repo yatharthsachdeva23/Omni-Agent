@@ -842,8 +842,8 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
             </div>
           </div>
 
-          {/* Anticipated Blind Spots (Only in Overdeliver Mode) */}
-          {finalEvaluation.delivery_mode === 'overdeliver' && finalEvaluation.anticipated_blind_spots && finalEvaluation.anticipated_blind_spots.length > 0 && (
+          {/* Anticipated Blind Spots (Smart Mode) */}
+          {(finalEvaluation.delivery_mode === 'smart' || finalEvaluation.delivery_mode === 'overdeliver') && finalEvaluation.anticipated_blind_spots && finalEvaluation.anticipated_blind_spots.length > 0 && (
             <div className="p-5 rounded-2xl bg-[#080808] border border-amber-500/20 space-y-3 shadow-xl">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -876,8 +876,8 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
             </div>
           )}
 
-          {/* Complimentary Starter Pack (Only in Overdeliver Mode) */}
-          {finalEvaluation.delivery_mode === 'overdeliver' && finalEvaluation.complimentary_starter_pack && Object.keys(finalEvaluation.complimentary_starter_pack).length > 0 && (
+          {/* Complimentary Starter Pack (Smart Mode) */}
+          {(finalEvaluation.delivery_mode === 'smart' || finalEvaluation.delivery_mode === 'overdeliver') && finalEvaluation.complimentary_starter_pack && Object.keys(finalEvaluation.complimentary_starter_pack).length > 0 && (
             <div className="p-5 rounded-2xl bg-[#080808] border border-emerald-500/20 space-y-4 shadow-2xl">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">

@@ -74,9 +74,8 @@ async def get_tools_catalog():
 @app.post("/api/advisor/suggest", response_model=AdvisorResponse)
 async def get_ai_advice(payload: dict):
     prompt = payload.get("prompt", "").strip()
-    delivery_mode = str(payload.get("delivery_mode", "overdeliver")).strip().lower()
-    if delivery_mode not in ["overdeliver", "strict"]:
-        delivery_mode = "overdeliver"
+    raw_mode = str(payload.get("delivery_mode", "smart")).strip().lower()
+    delivery_mode = "strict" if raw_mode == "strict" else "smart"
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt is required")
     response = await advisor_engine.advise_async(prompt, delivery_mode=delivery_mode)
@@ -89,6 +88,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 GENERATED_DIR = UPLOAD_DIR / "generated"
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/api/generated-images", StaticFiles(directory=str(GENERATED_DIR)), name="generated-images")
+app.mount("/api/generated-media", StaticFiles(directory=str(GENERATED_DIR)), name="generated-media")
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):

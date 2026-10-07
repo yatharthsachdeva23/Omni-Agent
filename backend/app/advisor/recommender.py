@@ -25,11 +25,11 @@ class AIAdvisorEngine:
             for t in self.catalog
         ])
 
-    async def advise_async(self, user_query: str, delivery_mode: str = "overdeliver") -> AdvisorResponse:
+    async def advise_async(self, user_query: str, delivery_mode: str = "smart") -> AdvisorResponse:
         """
         Primary LLM-powered advisory engine.
         Uses live Gemini 3.5 Flash / Groq to understand nuanced requirements and prescribe tools.
-        Supports 'overdeliver' (anticipatory insights + starter gifts) and 'strict' modes.
+        Supports 'smart' (anticipatory insights + starter gifts) and 'strict' modes.
         """
         # 1. Try Gemini 3.5 Flash Lite (First choice: fast, intelligent, structured JSON)
         if self.gemini_key:
@@ -52,7 +52,7 @@ class AIAdvisorEngine:
         # 3. Deterministic Safety Fallback (Guarantees zero-failure if all APIs are offline)
         return self._deterministic_fallback(user_query, delivery_mode=delivery_mode)
 
-    def advise(self, user_query: str, delivery_mode: str = "overdeliver") -> AdvisorResponse:
+    def advise(self, user_query: str, delivery_mode: str = "smart") -> AdvisorResponse:
         """
         Synchronous wrapper for backwards compatibility.
         """
@@ -69,12 +69,12 @@ class AIAdvisorEngine:
         except Exception:
             return self._deterministic_fallback(user_query, delivery_mode=delivery_mode)
 
-    def _build_advisor_prompt(self, user_query: str, delivery_mode: str = "overdeliver") -> str:
+    def _build_advisor_prompt(self, user_query: str, delivery_mode: str = "smart") -> str:
         overdeliver_rule = ""
-        if delivery_mode == "overdeliver":
+        if delivery_mode in ["smart", "overdeliver"]:
             overdeliver_rule = (
-                "5. PROACTIVE ANTICIPATORY INTELLIGENCE (OVERDELIVER MODE ACTIVATED):\n"
-                "   The user has selected 'Overdeliver Mode'. Beyond fulfilling their core request, you MUST anticipate their blind spots and provide valuable complimentary starter assets:\n"
+                "5. PROACTIVE ANTICIPATORY INTELLIGENCE (SMART MODE ACTIVATED):\n"
+                "   The user has selected 'Smart Mode'. Beyond fulfilling their core request, you MUST anticipate their blind spots and provide valuable complimentary starter assets:\n"
                 "   - 'anticipated_blind_spots': A list of 4-6 critical domain gotchas the user didn't explicitly think to ask about (e.g. audience psychology, hidden regulatory/COPPA pitfalls, pacing and audio retention drivers, sensory overload, common beginner mistakes).\n"
                 "   - 'complimentary_starter_pack': A dictionary containing high-value bonus assets tailored to their goal:\n"
                 "     * 'pilot_starter_script': A ready-to-use 60-second pilot script or starter template.\n"
@@ -625,7 +625,7 @@ class AIAdvisorEngine:
         anticipated_blind_spots: List[str] = []
         complimentary_starter_pack: Dict[str, Any] = {}
 
-        if delivery_mode == "overdeliver":
+        if delivery_mode in ["smart", "overdeliver"]:
             raw_spots = parsed.get("anticipated_blind_spots") or parsed.get("blind_spots") or []
             if isinstance(raw_spots, list) and raw_spots:
                 anticipated_blind_spots = [str(s) for s in raw_spots if s]
@@ -646,12 +646,12 @@ class AIAdvisorEngine:
             task_decomposition=decomposition,
             recommendations=filtered_tools,
             diy_execution_blueprint=formatted_blueprints,
-            delivery_mode=delivery_mode,
+            delivery_mode="smart" if delivery_mode in ["smart", "overdeliver"] else "strict",
             anticipated_blind_spots=anticipated_blind_spots,
             complimentary_starter_pack=complimentary_starter_pack
         )
 
-    def _deterministic_fallback(self, user_query: str, delivery_mode: str = "overdeliver") -> AdvisorResponse:
+    def _deterministic_fallback(self, user_query: str, delivery_mode: str = "smart") -> AdvisorResponse:
         """
         Dynamic semantic fallback adhering strictly to:
         1. Chronological phase order
@@ -932,15 +932,16 @@ class AIAdvisorEngine:
                 "expected_output": f"Verified deliverables for Phase {', '.join(map(str, rec.assigned_phases))}"
             })
 
-        anticipated_blind_spots = self._generate_default_blind_spots(user_query) if delivery_mode == "overdeliver" else []
-        complimentary_starter_pack = self._generate_default_starter_pack(user_query) if delivery_mode == "overdeliver" else {}
+        is_smart_mode = delivery_mode in ["smart", "overdeliver"]
+        anticipated_blind_spots = self._generate_default_blind_spots(user_query) if is_smart_mode else []
+        complimentary_starter_pack = self._generate_default_starter_pack(user_query) if is_smart_mode else {}
 
         return AdvisorResponse(
             original_query=user_query,
             task_decomposition=decomposition,
             recommendations=recommendations,
             diy_execution_blueprint=diy_blueprint,
-            delivery_mode=delivery_mode,
+            delivery_mode="smart" if is_smart_mode else "strict",
             anticipated_blind_spots=anticipated_blind_spots,
             complimentary_starter_pack=complimentary_starter_pack
         )
