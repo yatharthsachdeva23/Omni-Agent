@@ -7,6 +7,7 @@ from app.models.schemas import (
     TaskStatus,
     BlackboardState,
     FinalEvaluationResult,
+    DomainType,
 )
 from app.core.structurer import JSONStructurerAgent
 from app.core.jev_router import JevFastRouter
@@ -181,13 +182,17 @@ class OmniOrchestrator:
 
                 await asyncio.sleep(0.6)
 
-                # Re-execute worker using the new prompt from the reviewer
-                worker_result = await self.worker_pool.execute_task(
-                    task,
-                    context_packet,
-                    override_prompt=regen_prompt,
-                    attempt=attempt
-                )
+                try:
+                    # Re-execute worker using the new prompt from the reviewer
+                    worker_result = await self.worker_pool.execute_task(
+                        task,
+                        context_packet,
+                        override_prompt=regen_prompt,
+                        attempt=attempt
+                    )
+                except Exception as w_err:
+                    print(f"[Orchestrator] Worker error during retry {attempt} on {task.title}: {w_err}")
+                
                 yield self._format_sse("WORKER_COMPLETED", {
                     "step_id": step_id,
                     "worker_result": worker_result.model_dump(),
@@ -195,14 +200,17 @@ class OmniOrchestrator:
                     "attempt": attempt
                 })
 
-                # Re-review deliverable
-                review_result, negative_knowledge = await self.review_engine.review_task(
-                    task,
-                    worker_result,
-                    primary_objective=blackboard.original_prompt,
-                    prior_outputs=context_packet.get("cumulative_prior_outputs", {}),
-                    cumulative_handovers=context_packet.get("cumulative_handovers", {})
-                )
+                try:
+                    # Re-review deliverable
+                    review_result, negative_knowledge = await self.review_engine.review_task(
+                        task,
+                        worker_result,
+                        primary_objective=blackboard.original_prompt,
+                        prior_outputs=context_packet.get("cumulative_prior_outputs", {}),
+                        cumulative_handovers=context_packet.get("cumulative_handovers", {})
+                    )
+                except Exception as r_err:
+                    print(f"[Orchestrator] Review error during retry {attempt} on {task.title}: {r_err}")
 
             # If work is still not done (< 85%) after 5 tries, emit error message
             if review_result.quality_score < 85 or not review_result.passed:
