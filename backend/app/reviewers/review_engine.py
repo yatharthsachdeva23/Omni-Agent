@@ -26,7 +26,7 @@ class IntermediateReviewEngine:
     def __init__(self):
         self.gemini_key = config.GEMINI_API_KEY
         self.groq_key = config.GROQ_API_KEY
-        self.model_name = "gemini-2.5-flash"
+        self.model_name = "gemini-flash-lite-latest"
         self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
 
     async def review_task(
@@ -226,7 +226,7 @@ class IntermediateReviewEngine:
                 f"Worker Output:\n{worker_result.output_text[:8000]}\n\n"
                 "MULTI-AGENT EVALUATION RULE:\n"
                 "This workflow is executed by multiple specialized sub-agents working together in a DAG pipeline. "
-                "You MUST evaluate whether THIS specific sub-agent successfully fulfilled ITS assigned step ('{task.title}'). "
+                "You MUST evaluate whether THIS specific sub-agent successfully fulfilled ITS assigned step ('{task.title}': {task.description}). "
                 "Do NOT penalize this sub-agent for not fulfilling other parts of the overall objective that are handled by other sub-agents in the pipeline! "
                 "If this step is for a webpage, frontend UI, or replica, evaluate whether the HTML/CSS markup is clean, semantic, and well-designed. Do NOT expect Python code if the task is to build a webpage or UI replica!\n\n"
                 "DUAL-CHANNEL SANITY RULE:\n"
@@ -251,25 +251,26 @@ class IntermediateReviewEngine:
             )
             parts = [{"text": prompt_text}]
 
-        url = f"{self.endpoint}?key={self.gemini_key}"
-        payload = {
-            "contents": [
-                {
-                    "parts": parts
+        candidate_models = ["gemini-flash-lite-latest", "gemini-3.1-flash-lite"]
+        for c_model in candidate_models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{c_model}:generateContent?key={self.gemini_key}"
+            payload = {
+                "contents": [{"parts": parts}],
+                "generationConfig": {
+                    "response_mime_type": "application/json",
+                    "temperature": 0.1
                 }
-            ],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "temperature": 0.1
             }
-        }
+            try:
+                async with httpx.AsyncClient(timeout=14.0) as client:
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                        return self._parse_review_json(raw_text, task, f"Gemini ({c_model})")
+            except Exception:
+                continue
 
-        async with httpx.AsyncClient(timeout=18.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return self._parse_review_json(raw_text, task, "Gemini 2.0 Flash (Live API)")
         return None, None
 
     async def _call_groq_reviewer(
@@ -280,16 +281,22 @@ class IntermediateReviewEngine:
         prior_context_summary: str = ""
     ) -> Tuple[Optional[IntermediateReviewResult], Optional[NegativeKnowledgeItem]]:
         system_prompt = (
-            "You are the Strict Quality Reviewer for OmniTask AI.\n"
-            "Evaluate whether the worker output faithfully fulfilled the task and user objective.\n"
-            "CRITICAL: If the worker said it cannot access files, refused, output placeholder text, or was completely wrong/off-topic, reject it with score between 0 and 5. DO NOT award participation marks for failed outputs.\n"
+            "You are the Quality Reviewer for OmniTask AI.\n"
+            "MULTI-AGENT EVALUATION DIRECTIVE:\n"
+            "The user objective is decomposed into a sequential pipeline of specialized sub-tasks.\n"
+            "You MUST evaluate whether THIS worker successfully executed ITS assigned sub-task milestone.\n"
+            "Do NOT penalize this sub-agent for not fulfilling other stages of the workflow handled by preceding or downstream workers!\n"
+            "If the worker faithfully accomplished what was requested for THIS specific milestone, award a quality_score between 85 and 98 and set passed: true, status: 'approved'.\n"
+            "CRITICAL: If the worker refused, output placeholder text, or produced completely wrong/off-topic content for this milestone, reject it with score between 0 and 5.\n"
             "If score < 85, you MUST provide 'reviewer_regenerate_prompt': A concrete rewritten prompt for the worker to fix its output.\n"
             "Output strictly valid JSON with keys: 'passed' (bool), 'status' ('approved'|'rejected'|'warning'), 'quality_score' (int 0-100), 'critique' (str), 'recommendations' (list of str), 'reviewer_regenerate_prompt' (str or null), 'negative_knowledge_directive' (str)."
         )
         user_msg = (
-            f"User Objective: {primary_objective or task.description}\n"
-            f"Step Title: {task.title}\n"
-            f"Preceding Blackboard Context:\n{prior_context_summary}\n\n"
+            f"Overall Objective: {primary_objective}\n"
+            f"THIS SUB-AGENT'S ASSIGNED MILESTONE: {task.title}\n"
+            f"Milestone Instructions: {task.description}\n"
+            f"Expected Output Type: {task.expected_output_type}\n"
+            f"Preceding Context from Blackboard:\n{prior_context_summary}\n\n"
             f"Worker Output:\n{worker_result.output_text[:6000]}"
         )
 
