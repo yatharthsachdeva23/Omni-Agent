@@ -253,6 +253,24 @@ class OmniOrchestrator:
         raw_mode = getattr(request, "delivery_mode", "smart") or "smart"
         delivery_mode = "strict" if str(raw_mode).lower() == "strict" else "smart"
         evaluation = self.evaluator.evaluate(blackboard.get_state(), delivery_mode=delivery_mode)
+
+        # Persist session execution snapshot to disk for inspection & review
+        try:
+            from pathlib import Path
+            sessions_dir = Path(__file__).resolve().parent.parent.parent / "uploads" / "sessions"
+            sessions_dir.mkdir(parents=True, exist_ok=True)
+            snapshot = {
+                "session_id": session_id,
+                "prompt": blackboard.original_prompt,
+                "delivery_mode": delivery_mode,
+                "final_evaluation": evaluation.model_dump(),
+                "blackboard_state": blackboard.get_state().model_dump()
+            }
+            (sessions_dir / "latest_execution.json").write_text(json.dumps(snapshot, indent=2, default=str), encoding="utf-8")
+            (sessions_dir / f"{session_id}.json").write_text(json.dumps(snapshot, indent=2, default=str), encoding="utf-8")
+        except Exception as snap_err:
+            print(f"[Orchestrator] Error saving session snapshot: {snap_err}")
+
         yield self._format_sse("EXECUTION_COMPLETED", {
             "session_id": session_id,
             "final_evaluation": evaluation.model_dump(),

@@ -149,12 +149,19 @@ class JSONStructurerAgent:
         system_prompt = (
             "You are the JSON Structurer Agent for OmniTask AI.\n"
             "Decompose user requests and attached resources into a validated DAG of sequential subtasks.\n"
-            "Output strictly valid JSON with keys: 'primary_objective', 'constraints', 'prerequisites', and 'sub_tasks'."
+            "Output strictly valid JSON with keys: 'primary_objective', 'constraints', 'prerequisites', and 'sub_tasks'.\n\n"
+            "CRITICAL DOMAIN RULES:\n"
+            "- Domain 'audit': For text research, summaries, reports, resource compilation, comparisons, poems, and content analysis. Worker: 'OpenAI GPT (Auditing Specialist)' or 'Gemini 2.0 Flash (Summarizer Specialist)'.\n"
+            "- Domain 'code': Strictly for programming, scripts, APIs, algorithms, frontend HTML/CSS/JS. Worker: 'Qwen 2.5 Coder (via Groq Cloud)'. NEVER assign to plain text summaries or reports!\n"
+            "- Domain 'vision': Strictly for generating images, thumbnails, photos, diagrams, illustrations. Worker: 'Flux.1 (Visual Asset Specialist)'.\n"
+            "- Domain 'audio': Strictly for music tracks, audio generation, sound effects. Worker: 'Meta MusicGen & Suno AI (Music & Audio Specialist)'. ONLY use when user explicitly asks for music or audio!\n"
+            "- Domain 'video': Strictly for video generation, motion clips, animation. Worker: 'Kling AI & CogVideoX (Motion & Video Specialist)'. ONLY use when user explicitly asks for video, motion, or animation! NEVER assign to text summaries or markdown reports!\n"
+            "- Multi-Option Independence: When generating suggestions (e.g. 3 recipes), treat them as independent standalone options, never force combining them unless explicitly asked."
         )
         user_msg = (
             f"User Objective: \"{prompt}\"\n"
             f"Attached Files:\n{files_context}\n\n"
-            "Generate 1 to 4 subtasks with valid domains ('code', 'math', 'vision', 'video', 'audit')."
+            "Generate 1 to 4 subtasks with valid domains ('code', 'math', 'vision', 'audio', 'video', 'audit')."
         )
 
         async with httpx.AsyncClient(timeout=12.0) as client:
@@ -180,6 +187,42 @@ class JSONStructurerAgent:
                 parsed = json.loads(content)
                 return self._parse_json_to_goal(parsed, prompt, files)
         return None
+
+    def _normalize_domain(self, domain: DomainType, title: str, desc: str, prompt: str, out_type: str) -> DomainType:
+        """
+        Enforces strict domain boundaries preventing LLMs from misclassifying text tasks as video or code.
+        """
+        task_text = f"{title} {desc} {out_type}".lower()
+        prompt_text = prompt.lower()
+
+        video_triggers = ["video", "motion", "clip", "animation", "b-roll", "storyboard", "cinematic shot", "camerawork"]
+        is_video_task = any(vt in task_text for vt in video_triggers) or any(vt in prompt_text for vt in video_triggers)
+        is_text_synthesis = any(st in task_text for st in [
+            "summariz", "synthesiz", "markdown report", "write a report", "table", "curate", "audit",
+            "extract points", "structure points", "list of", "deliverable_markdown", "overview", "strategy content"
+        ])
+
+        if domain == DomainType.VIDEO:
+            # If the user prompt didn't ask for video, or task is summarizing/reporting, remap to AUDIT
+            if not is_video_task or (is_text_synthesis and not any(vt in task_text for vt in ["generate video", "render video", "video clip", "create video"])):
+                return DomainType.AUDIT
+
+        audio_triggers = ["audio", "music", "soundtrack", "song", "beat", "melody", "sound effect", "suno", "musicgen"]
+        is_audio_task = any(at in task_text for at in audio_triggers) or any(at in prompt_text for at in audio_triggers)
+        if domain == DomainType.AUDIO and not is_audio_task:
+            return DomainType.AUDIT
+
+        vision_triggers = ["image", "picture", "photo", "render", "visual", "thumbnail", "illustration", "diagram", "infographic", "drawing", "poster"]
+        is_vision_task = any(vt in task_text for vt in vision_triggers) or any(vt in prompt_text for vt in vision_triggers)
+        if domain == DomainType.VISION and not is_vision_task:
+            return DomainType.AUDIT
+
+        code_triggers = ["python", "script", "program", "api", "html", "css", "javascript", "code", "coding", "software", "backend", "frontend", "algorithm", "developer", "endpoint", "database", "sql"]
+        has_code_keywords = any(ct in task_text for ct in code_triggers)
+        if domain == DomainType.CODE and not has_code_keywords:
+            return DomainType.AUDIT
+
+        return domain
 
     def _parse_json_to_goal(self, parsed: Dict[str, Any], prompt: str, files: List[IngestedFile]) -> StructuredGoal:
         primary_objective = parsed.get("primary_objective") or prompt
@@ -212,12 +255,35 @@ class JSONStructurerAgent:
             step_id = t.get("step_id") or f"step_{idx + 1}"
             title = t.get("title") or f"Sub-Task {idx + 1}"
             desc = t.get("description") or f"Execute milestone {idx + 1} for: {prompt[:80]}"
-            worker = t.get("assigned_worker_model") or "OpenAI GPT / Gemini Specialist"
-            reviewer = "Gemini 2.0 Flash (Multimodal & Step QA Reviewer)"
             req_prereqs = t.get("required_prerequisites", [f"step_{idx}"] if idx > 0 else ["User input"])
             if not isinstance(req_prereqs, list):
                 req_prereqs = [str(req_prereqs)]
             out_type = t.get("expected_output_type", "deliverable_markdown")
+
+            # Apply domain normalization guardrail
+            domain = self._normalize_domain(domain, title, desc, prompt, out_type)
+
+            # Assign specialized worker model aligned with normalized domain
+            worker_candidate = t.get("assigned_worker_model", "")
+            if domain == DomainType.AUDIT:
+                if any(w in desc.lower() or w in title.lower() for w in ["summariz", "summary"]):
+                    worker = "Gemini 2.0 Flash (Summarizer Specialist)"
+                else:
+                    worker = "OpenAI GPT (Auditing Specialist)"
+            elif domain == DomainType.CODE:
+                worker = "Qwen 2.5 Coder (via Groq Cloud)"
+            elif domain == DomainType.VISION:
+                worker = "Flux.1 (Visual Asset Specialist)"
+            elif domain == DomainType.AUDIO:
+                worker = "Meta MusicGen & Suno AI (Music & Audio Specialist)"
+            elif domain == DomainType.VIDEO:
+                worker = "Kling AI & CogVideoX (Motion & Video Specialist)"
+            elif domain == DomainType.MATH:
+                worker = "Mistral (Legal & Formal Logic Specialist)"
+            else:
+                worker = worker_candidate or "OpenAI GPT / Gemini Specialist"
+
+            reviewer = "Gemini 2.0 Flash (Multimodal & Step QA Reviewer)"
 
             sub_tasks.append(StructuredSubTask(
                 step_id=step_id,

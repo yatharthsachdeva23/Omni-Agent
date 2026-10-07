@@ -36,6 +36,44 @@ class JevFastRouter:
         # Gemini is ALWAYS and EXCLUSIVELY used for reviewing:
         self.dedicated_reviewer = "Gemini 2.0 Flash (Multimodal & Step QA Reviewer)"
 
+    def _normalize_subtask_domain(self, domain_val: Any, title: str, desc: str, prompt: str, out_type: str = "") -> DomainType:
+        domain_str = domain_val.value if hasattr(domain_val, 'value') else str(domain_val).lower()
+        try:
+            domain = DomainType(domain_str)
+        except ValueError:
+            domain = DomainType.AUDIT
+
+        task_text = f"{title} {desc} {out_type}".lower()
+        prompt_text = prompt.lower()
+
+        video_triggers = ["video", "motion", "clip", "animation", "b-roll", "storyboard", "cinematic shot", "camerawork"]
+        is_video_task = any(vt in task_text for vt in video_triggers) or any(vt in prompt_text for vt in video_triggers)
+        is_text_synthesis = any(st in task_text for st in [
+            "summariz", "synthesiz", "markdown report", "write a report", "table", "curate", "audit",
+            "extract points", "structure points", "list of", "deliverable_markdown", "overview", "strategy content"
+        ])
+
+        if domain == DomainType.VIDEO:
+            if not is_video_task or (is_text_synthesis and not any(vt in task_text for vt in ["generate video", "render video", "video clip", "create video"])):
+                return DomainType.AUDIT
+
+        audio_triggers = ["audio", "music", "soundtrack", "song", "beat", "melody", "sound effect", "suno", "musicgen"]
+        is_audio_task = any(at in task_text for at in audio_triggers) or any(at in prompt_text for at in audio_triggers)
+        if domain == DomainType.AUDIO and not is_audio_task:
+            return DomainType.AUDIT
+
+        vision_triggers = ["image", "picture", "photo", "render", "visual", "thumbnail", "illustration", "diagram", "infographic", "drawing", "poster"]
+        is_vision_task = any(vt in task_text for vt in vision_triggers) or any(vt in prompt_text for vt in vision_triggers)
+        if domain == DomainType.VISION and not is_vision_task:
+            return DomainType.AUDIT
+
+        code_triggers = ["python", "script", "program", "api", "html", "css", "javascript", "code", "coding", "software", "backend", "frontend", "algorithm", "developer", "endpoint", "database", "sql"]
+        has_code_keywords = any(ct in task_text for ct in code_triggers)
+        if domain == DomainType.CODE and not has_code_keywords:
+            return DomainType.AUDIT
+
+        return domain
+
     async def route_plan_async(self, structured_goal: StructuredGoal) -> StructuredGoal:
         """
         Executes fast System 1 routing on the structured goal using Jev.
@@ -94,7 +132,14 @@ class JevFastRouter:
         # Map each sub-task to the specialized models
         scheduled_tasks: List[StructuredSubTask] = []
         for idx, task in enumerate(structured_goal.sub_tasks):
-            domain_str = task.domain.value if hasattr(task.domain, 'value') else str(task.domain)
+            norm_domain = self._normalize_subtask_domain(
+                task.domain,
+                task.title,
+                task.description,
+                structured_goal.primary_objective,
+                task.expected_output_type or ""
+            )
+            domain_str = norm_domain.value
             
             if domain_str == "code":
                 worker_model = self.worker_dispatch_table["code"]
@@ -123,7 +168,7 @@ class JevFastRouter:
             scheduled_tasks.append(StructuredSubTask(
                 step_id=task.step_id,
                 title=task.title,
-                domain=task.domain,
+                domain=norm_domain,
                 description=task.description,
                 assigned_worker_model=worker_model,
                 assigned_reviewer_model=self.dedicated_reviewer,
@@ -147,7 +192,14 @@ class JevFastRouter:
                 start_time = time.perf_counter()
                 scheduled_tasks = []
                 for idx, task in enumerate(structured_goal.sub_tasks):
-                    domain_str = task.domain.value if hasattr(task.domain, 'value') else str(task.domain)
+                    norm_domain = self._normalize_subtask_domain(
+                        task.domain,
+                        task.title,
+                        task.description,
+                        structured_goal.primary_objective,
+                        task.expected_output_type or ""
+                    )
+                    domain_str = norm_domain.value
                     if domain_str == "code":
                         worker = self.worker_dispatch_table["code"]
                     elif domain_str == "vision":
@@ -158,7 +210,7 @@ class JevFastRouter:
                         worker = self.worker_dispatch_table["video"]
                     elif domain_str == "math":
                         worker = self.worker_dispatch_table["legal_logic"]
-                    elif "summary" in task.title.lower():
+                    elif "summary" in task.title.lower() or "summariz" in task.description.lower():
                         worker = self.worker_dispatch_table["summary"]
                     else:
                         worker = self.worker_dispatch_table["audit"]
@@ -172,7 +224,7 @@ class JevFastRouter:
                     scheduled_tasks.append(StructuredSubTask(
                         step_id=task.step_id,
                         title=task.title,
-                        domain=task.domain,
+                        domain=norm_domain,
                         description=task.description,
                         assigned_worker_model=worker,
                         assigned_reviewer_model=self.dedicated_reviewer,

@@ -79,6 +79,12 @@ async def get_ai_advice(payload: dict):
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt is required")
     response = await advisor_engine.advise_async(prompt, delivery_mode=delivery_mode)
+    try:
+        sessions_dir = Path(__file__).resolve().parent.parent / "uploads" / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        (sessions_dir / "latest_advisor.json").write_text(response.model_dump_json(indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"[Advisor] Error saving snapshot: {e}")
     return response
 
 from app.utils.file_parser import extract_text_from_file_bytes
