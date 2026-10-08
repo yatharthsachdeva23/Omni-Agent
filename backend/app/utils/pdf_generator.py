@@ -66,7 +66,20 @@ class NumberedCanvas(canvas.Canvas):
 def clean_markdown_for_reportlab(text: str) -> str:
     """
     Sanitizes markdown tags into ReportLab compatible XML tags.
+    Strips raw markdown syntax (such as leftover ####, LaTeX wraps, etc.)
     """
+    # Strip any leading markdown header hashes if left over in paragraph
+    text = re.sub(r"^#{1,6}\s*", "", text.strip())
+
+    # Clean LaTeX inline/display wraps
+    text = text.replace(r"\(", "").replace(r"\)", "").replace(r"\[", "").replace(r"\]", "")
+    # Clean common LaTeX math operators
+    text = re.sub(r"\\mathbf\{([^}]+)\}", r"<b>\1</b>", text)
+    text = re.sub(r"\\mathcal\{([^}]+)\}", r"\1", text)
+    text = re.sub(r"\\text\{([^}]+)\}", r"\1", text)
+    text = text.replace(r"\det", "det").replace(r"\sim", "~").replace(r"\odot", "⊙")
+    text = text.replace(r"\partial", "∂").replace(r"\frac", "")
+
     # Escape XML entities first
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -175,6 +188,18 @@ def markdown_to_pdf(
         textColor=colors.HexColor("#475569"),
         spaceBefore=8,
         spaceAfter=3,
+        keepWithNext=True,
+    )
+
+    h4_style = ParagraphStyle(
+        "DocH4",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=13,
+        textColor=colors.HexColor("#0f172a"),
+        spaceBefore=7,
+        spaceAfter=2,
         keepWithNext=True,
     )
 
@@ -287,20 +312,20 @@ def markdown_to_pdf(
             i += 1
             continue
 
-        # Headings
-        if stripped.startswith("# "):
-            clean_text = clean_markdown_for_reportlab(stripped[2:])
-            flowables.append(Paragraph(clean_text, h1_style))
-            i += 1
-            continue
-        elif stripped.startswith("## "):
-            clean_text = clean_markdown_for_reportlab(stripped[3:])
-            flowables.append(Paragraph(clean_text, h2_style))
-            i += 1
-            continue
-        elif stripped.startswith("### "):
-            clean_text = clean_markdown_for_reportlab(stripped[4:])
-            flowables.append(Paragraph(clean_text, h3_style))
+        # Headings: #, ##, ###, ####, #####, ######
+        h_match = re.match(r"^(#{1,6})\s+(.*)$", stripped)
+        if h_match:
+            level = len(h_match.group(1))
+            heading_content = h_match.group(2).strip()
+            clean_text = clean_markdown_for_reportlab(heading_content)
+            if level == 1:
+                flowables.append(Paragraph(clean_text, h1_style))
+            elif level == 2:
+                flowables.append(Paragraph(clean_text, h2_style))
+            elif level == 3:
+                flowables.append(Paragraph(clean_text, h3_style))
+            else:
+                flowables.append(Paragraph(clean_text, h4_style))
             i += 1
             continue
 
@@ -312,8 +337,8 @@ def markdown_to_pdf(
             i += 1
             continue
 
-        # Numbered lists (e.g. "1. ", "2) ")
-        num_match = re.match(r"^(\d+[\.\)])\s+(.*)$", stripped)
+        # Numbered & Lettered lists (e.g. "1. ", "2) ", "A) ", "B) ")
+        num_match = re.match(r"^([0-9]+[\.\)]|[A-Z][\.\)])\s+(.*)$", stripped)
         if num_match:
             num_prefix = num_match.group(1)
             clean_text = clean_markdown_for_reportlab(num_match.group(2))

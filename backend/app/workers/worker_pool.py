@@ -106,13 +106,15 @@ class WorkerPool:
         # Route to specialist sub-agent with full Common Context Blackboard continuity
         is_creative_writing = any(w in task.title.lower() or w in task.description.lower() for w in ["poem", "poetry", "rhyme", "sonnet", "ballad", "creative story", "lyrics", "haiku"])
         is_answering_step = any(w in task.title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer"])
-        is_pdf_specialist = (
-            "pdf & document publishing specialist" in assigned_model.lower()
-            or task.expected_output_type in ["pdf_document", "pdf_deliverable", "pdf"]
-            or any(w in task.title.lower() for w in ["pdf document compilation", "pdf compilation", "compile pdf", "document compilation", "pdf publishing"])
+        is_document_specialist = (
+            "document publishing specialist" in assigned_model.lower()
+            or "pdf & document publishing specialist" in assigned_model.lower()
+            or "word" in assigned_model.lower()
+            or task.expected_output_type in ["pdf_document", "pdf_deliverable", "pdf", "word_document", "docx", "doc"]
+            or any(w in task.title.lower() for w in ["pdf document compilation", "pdf compilation", "compile pdf", "document compilation", "pdf publishing", "word document compilation", "word compilation", "compile word", "word document"])
         ) and not is_answering_step
 
-        if is_pdf_specialist:
+        if is_document_specialist:
             result = await self._run_pdf_compiler(task, objective, prior_outputs, cumulative_handovers, override_prompt)
         elif is_creative_writing:
             result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
@@ -717,7 +719,7 @@ if __name__ == "__main__":
             success=True
         )
 
-    # 3.5. PDF & DOCUMENT PUBLISHING SPECIALIST: ReportLab Native Compiler
+    # 3.5. PDF & DOCUMENT PUBLISHING SPECIALIST: Native ReportLab & python-docx Compiler
     async def _run_pdf_compiler(
         self,
         task: StructuredSubTask,
@@ -728,11 +730,11 @@ if __name__ == "__main__":
     ) -> WorkerResult:
         """
         Specialist worker that compiles verified markdown solutions/content
-        from the blackboard into a styled publication-grade PDF document.
+        from the blackboard into publication-grade Word (.docx) and/or PDF documents.
         """
         from app.utils.pdf_generator import markdown_to_pdf
 
-        # Aggregate content to compile into PDF from prior outputs
+        # Aggregate content to compile into document from prior outputs
         content_parts = []
         for sid, prev in prior_outputs.items():
             if isinstance(prev, dict):
@@ -752,6 +754,47 @@ if __name__ == "__main__":
             if phrase in objective.lower():
                 doc_title = "Assignment Solutions & Technical Answers"
                 break
+
+        is_word_requested = any(w in (task.title + " " + task.description + " " + objective).lower() for w in [
+            "word doc", "word document", "docx", ".docx", "microsoft word", "word format", "in word", "as word"
+        ])
+
+        if is_word_requested:
+            from app.utils.docx_generator import markdown_to_docx
+            docx_url, docx_path = markdown_to_docx(compiled_content, title=doc_title)
+            docx_kb = round(docx_path.stat().st_size / 1024, 1)
+
+            # Also compile a PDF version for convenience
+            pdf_url, pdf_path = markdown_to_pdf(compiled_content, title=doc_title)
+            pdf_kb = round(pdf_path.stat().st_size / 1024, 1)
+
+            output_md = (
+                f"### 📄 Publication-Grade Microsoft Word Document (.docx) Compiled\n\n"
+                f"The verified solutions have been formatted and compiled into a native Microsoft Word document (.docx) as requested.\n\n"
+                f"- **Document Title**: {doc_title}\n"
+                f"- **Word File (.docx)**: `{docx_path.name}` ({docx_kb} KB)\n"
+                f"- **PDF Companion**: `{pdf_path.name}` ({pdf_kb} KB)\n"
+                f"- **Formatting Engine**: python-docx OpenXML + ReportLab Canvas\n\n"
+                f"📥 **Download Microsoft Word Document**: [Download {docx_path.name}]({docx_url})\n\n"
+                f"📥 **Download PDF Companion**: [Download {pdf_path.name}]({pdf_url})\n"
+            )
+
+            return WorkerResult(
+                step_id=task.step_id,
+                worker_model="Word & Document Publishing Specialist",
+                domain=DomainType.AUDIT,
+                output_text=output_md,
+                artifacts={
+                    "docx_url": docx_url,
+                    "local_path": str(docx_path),
+                    "filename": docx_path.name,
+                    "has_docx": True,
+                    "file_size_bytes": docx_path.stat().st_size,
+                    "pdf_url": pdf_url,
+                    "has_pdf": True
+                },
+                success=True
+            )
 
         pdf_url, pdf_path = markdown_to_pdf(compiled_content, title=doc_title)
         file_size_kb = round(pdf_path.stat().st_size / 1024, 1)
