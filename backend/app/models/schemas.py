@@ -51,6 +51,9 @@ class StructuredSubTask(BaseModel):
     expected_output_type: str
     retry_count: int = 0
     status: TaskStatus = TaskStatus.PENDING
+    is_dynamically_added: bool = False
+    dynamic_insertion_reason: Optional[str] = None
+    parent_step_id: Optional[str] = None
 
 class StructuredGoal(BaseModel):
     primary_objective: str
@@ -82,6 +85,8 @@ class IntermediateReviewResult(BaseModel):
     reviewer_regenerate_prompt: Optional[str] = None
     passed: bool = True
     mitigation_required: bool = False
+    requires_additional_agent: bool = False
+    additional_agent_spec: Optional[Dict[str, Any]] = None
 
 class NegativeKnowledgeItem(BaseModel):
     step_id: str

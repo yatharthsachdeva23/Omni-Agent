@@ -15,11 +15,13 @@ from app.core.blackboard import CommonContextBlackboard
 from app.workers.worker_pool import WorkerPool
 from app.reviewers.review_engine import IntermediateReviewEngine
 from app.core.evaluator import FinalEvaluationAgent
+from app.core.dynamic_replanner import DynamicSwarmReplanner
 
 class OmniOrchestrator:
     """
     Main autonomous orchestrator for Track 2.
     Executes the entire multi-agent loop with streaming event telemetry.
+    Supports in-flight dynamic sub-agent insertion and downstream context adaptation.
     """
     def __init__(self):
         self.structurer = JSONStructurerAgent()
@@ -27,6 +29,7 @@ class OmniOrchestrator:
         self.worker_pool = WorkerPool()
         self.review_engine = IntermediateReviewEngine()
         self.evaluator = FinalEvaluationAgent()
+        self.replanner = DynamicSwarmReplanner(max_dynamic_additions=2)
 
     async def execute_stream(self, request: TaskRequest) -> AsyncGenerator[str, None]:
         session_id = f"omni_{uuid.uuid4().hex[:8]}"
@@ -89,8 +92,14 @@ class OmniOrchestrator:
             "tasks_count": len(routed_plan.sub_tasks)
         })
 
-        # --- STEP 4: SUB-AGENT EXECUTION & STEP QA GATES ---
-        for task in routed_plan.sub_tasks:
+        # --- STEP 4: SUB-AGENT EXECUTION & ADAPTIVE STEP QA GATES ---
+        task_queue: List[StructuredSubTask] = list(routed_plan.sub_tasks)
+        task_index = 0
+        dynamically_added_count = 0
+        dynamically_inserted_tasks: List[StructuredSubTask] = []
+
+        while task_index < len(task_queue):
+            task = task_queue[task_index]
             step_id = task.step_id
             blackboard.current_step_id = step_id
 
@@ -101,15 +110,30 @@ class OmniOrchestrator:
                 "domain": task.domain,
                 "assigned_worker": task.assigned_worker_model,
                 "assigned_reviewer": task.assigned_reviewer_model,
-                "status": TaskStatus.IN_PROGRESS
+                "status": TaskStatus.IN_PROGRESS,
+                "is_dynamically_added": getattr(task, "is_dynamically_added", False),
+                "dynamic_insertion_reason": getattr(task, "dynamic_insertion_reason", None)
             })
 
             # Fetch context from Blackboard (zero cold-start)
             context_packet = blackboard.get_context_for_subagent(step_id)
+
+            # ADAPTIVE CONTINUITY DIRECTIVE FOR DOWNSTREAM AGENTS:
+            # If dynamic specialist(s) were previously inserted and executed before this task,
+            # inform this downstream agent of what was completed and how to adapt/integrate it!
+            if dynamically_inserted_tasks and not getattr(task, "is_dynamically_added", False):
+                continuity_directive = self.replanner.format_downstream_continuity_context(
+                    dynamically_inserted_tasks,
+                    blackboard.completed_outputs
+                )
+                if continuity_directive:
+                    context_packet["downstream_continuity_directive"] = continuity_directive
+
             yield self._format_sse("CONTEXT_INJECTED", {
                 "step_id": step_id,
                 "prior_outputs_count": len(context_packet.get("cumulative_prior_outputs", {})),
-                "avoidance_rules": context_packet.get("negative_knowledge_avoidance_rules", [])
+                "avoidance_rules": context_packet.get("negative_knowledge_avoidance_rules", []),
+                "has_continuity_adaptation": bool(context_packet.get("downstream_continuity_directive"))
             })
 
             await asyncio.sleep(0.6)
@@ -240,7 +264,49 @@ class OmniOrchestrator:
                 "blackboard_snapshot": blackboard.get_state().model_dump()
             })
 
+            # --- DYNAMIC SWARM EXPANSION EVALUATION ---
+            # Evaluate whether an additional specialist AI should be dynamically inserted
+            new_specialist_task = self.replanner.evaluate_dynamic_expansion(
+                current_task=task,
+                worker_result=worker_result,
+                review_result=review_result,
+                primary_objective=blackboard.original_prompt,
+                prior_outputs=blackboard.completed_outputs,
+                remaining_tasks=task_queue[task_index + 1:],
+                dynamically_added_count=dynamically_added_count
+            )
+
+            if new_specialist_task:
+                dynamically_added_count += 1
+                dynamically_inserted_tasks.append(new_specialist_task)
+                
+                # Insert immediately after current task (before downstream tasks)
+                insert_pos = task_index + 1
+                task_queue.insert(insert_pos, new_specialist_task)
+
+                # Update downstream tasks' prerequisites so DAG is strictly sequential & coherent
+                for downstream_task in task_queue[insert_pos + 1:]:
+                    if new_specialist_task.step_id not in downstream_task.required_prerequisites:
+                        downstream_task.required_prerequisites.append(new_specialist_task.step_id)
+
+                # Update blackboard structured goal
+                if blackboard.structured_goal:
+                    blackboard.structured_goal.sub_tasks = list(task_queue)
+
+                yield self._format_sse("DYNAMIC_SUBAGENT_INSERTED", {
+                    "session_id": session_id,
+                    "inserted_task": new_specialist_task.model_dump(),
+                    "insert_after_step_id": step_id,
+                    "reason": new_specialist_task.dynamic_insertion_reason,
+                    "total_workflow_tasks": len(task_queue),
+                    "updated_plan": {
+                        "primary_objective": blackboard.original_prompt,
+                        "sub_tasks": [t.model_dump() for t in task_queue]
+                    }
+                })
+
             await asyncio.sleep(0.3)
+            task_index += 1
 
         # --- STEP 5: FINAL EVALUATION & COMPLETION SCORING ---
         yield self._format_sse("STAGE_CHANGE", {

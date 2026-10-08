@@ -94,6 +94,15 @@ class WorkerPool:
 
         cumulative_handovers = blackboard_context.get("cumulative_handovers", {})
 
+        downstream_continuity = blackboard_context.get("downstream_continuity_directive", "")
+        if downstream_continuity:
+            objective = f"{objective}\n{downstream_continuity}"
+
+        if getattr(task, "is_dynamically_added", False):
+            dynamic_reason = getattr(task, "dynamic_insertion_reason", "Specialist capability expansion")
+            dynamic_note = f"\n[DYNAMIC SWARM SPECIALIST INJECTION]: {dynamic_reason}\n"
+            objective = f"{objective}\n{dynamic_note}"
+
         # Route to specialist sub-agent with full Common Context Blackboard continuity
         is_creative_writing = any(w in task.title.lower() or w in task.description.lower() for w in ["poem", "poetry", "rhyme", "sonnet", "ballad", "creative story", "lyrics", "haiku"])
         is_answering_step = any(w in task.title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer"])

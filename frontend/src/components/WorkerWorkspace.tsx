@@ -179,6 +179,12 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
       if (data.blackboard_snapshot) {
         setBlackboard(data.blackboard_snapshot);
       }
+    } else if (eventName === 'DYNAMIC_SUBAGENT_INSERTED') {
+      setCurrentStage('EXECUTING');
+      setStageMessage(`Adaptive Swarm: Dynamically inserted '${data.inserted_task?.title}' (${data.reason || 'Specialist expansion'})...`);
+      if (data.updated_plan) {
+        setStructuredGoal(data.updated_plan);
+      }
     } else if (eventName === 'EXECUTION_COMPLETED') {
       setCurrentStage('COMPLETED');
       setStageMessage(`Task execution finalized • Score: ${data.final_evaluation.overall_completion_score}%`);

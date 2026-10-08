@@ -426,12 +426,22 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                       {getDomainIcon(task.domain)}
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.2 rounded bg-white/[0.04] text-neutral-400 border border-white/[0.06]">
                           {task.step_id.toUpperCase()} &bull; {task.domain}
                         </span>
+                        {(task as any).is_dynamically_added && (
+                          <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1 font-semibold">
+                            ⚡ Dynamically Added Specialist
+                          </span>
+                        )}
                         <h4 className="text-xs font-medium text-white">{task.title}</h4>
                       </div>
+                      {(task as any).dynamic_insertion_reason && (
+                        <p className="text-[11px] text-amber-300/80 font-mono mt-0.5">
+                          Trigger: {(task as any).dynamic_insertion_reason}
+                        </p>
+                      )}
                       <div className="flex items-center gap-2 text-[11px] text-neutral-500 mt-1 font-mono">
                         <span>Worker: <strong className="text-neutral-300">{task.assigned_worker_model.split(' ')[0]}</strong></span>
                         <span>&bull;</span>

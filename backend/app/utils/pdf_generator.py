@@ -219,38 +219,50 @@ def markdown_to_pdf(
     lines = markdown_content.split("\n")
     in_code_block = False
     code_lines = []
+    code_block_lang = ""
 
     i = 0
     while i < len(lines):
         line = lines[i]
+        stripped = line.strip()
 
         # Check code fence
-        if line.strip().startswith("```"):
+        if stripped.startswith("```"):
             if in_code_block:
-                # Close code block
                 in_code_block = False
-                code_text = "<br/>".join(
-                    [
-                        l.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace(" ", "&nbsp;")
-                        for l in code_lines
-                    ]
-                )
-                if code_text:
-                    p_code = Paragraph(code_text, code_style)
-                    t = Table([[p_code]], colWidths=[504])
-                    t.setStyle(TableStyle([
-                        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-                        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-                        ("TOPPADDING", (0, 0), (-1, -1), 6),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ]))
-                    flowables.append(t)
-                    flowables.append(Spacer(1, 6))
+                is_md_block = code_block_lang in ["markdown", "md"] or any(l.strip().startswith(("#", "##", "- ", "* ", "1.")) for l in code_lines[:6])
+                if is_md_block:
+                    # Unpack markdown lines into the main stream to be rendered as styled headings and text
+                    lines = lines[:i] + code_lines + lines[i+1:]
+                    code_lines = []
+                    continue
+
+                if code_lines:
+                    chunk_size = 15
+                    rows = []
+                    for k in range(0, len(code_lines), chunk_size):
+                        chunk = code_lines[k:k+chunk_size]
+                        chunk_text = "<br/>".join([
+                            l.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace(" ", "&nbsp;")
+                            for l in chunk
+                        ])
+                        rows.append([Paragraph(chunk_text, code_style)])
+                    
+                    if rows:
+                        t = Table(rows, colWidths=[504])
+                        t.setStyle(TableStyle([
+                            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                            ("TOPPADDING", (0, 0), (-1, -1), 3),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                        ]))
+                        flowables.append(t)
+                        flowables.append(Spacer(1, 6))
                 code_lines = []
             else:
-                # Open code block
+                code_block_lang = stripped[3:].strip().lower()
                 in_code_block = True
                 code_lines = []
             i += 1

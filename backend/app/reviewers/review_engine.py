@@ -237,7 +237,8 @@ class IntermediateReviewEngine:
                 "- If the worker executed this step partially or with flaws, set status: 'warning', and quality_score between 50 and 70.\n"
                 "- If the worker output directly fulfills what this step requested, "
                 "set passed: true, status: 'approved', and quality_score between 85 and 100.\n"
-                "- If quality_score < 85, you MUST provide 'reviewer_regenerate_prompt': Exact rewritten instructions or prompt the worker should execute to correct flaws.\n\n"
+                "- If quality_score < 85, you MUST provide 'reviewer_regenerate_prompt': Exact rewritten instructions or prompt the worker should execute to correct flaws.\n"
+                "- If this task output requires an additional specialized AI in the workflow (e.g. mathematical proof verification, code implementation, data chart, or technical edge-case audit), set 'requires_additional_agent': true and provide 'additional_agent_spec'.\n\n"
                 "Output MUST be valid JSON with this exact schema:\n"
                 "{\n"
                 '  "passed": boolean,\n'
@@ -246,7 +247,9 @@ class IntermediateReviewEngine:
                 '  "critique": "Detailed critique explaining strengths or failures",\n'
                 '  "recommendations": ["Recommendation 1", ...],\n'
                 '  "reviewer_regenerate_prompt": "Corrective prompt for worker to re-run if score < 85, or null if >= 85",\n'
-                '  "negative_knowledge_directive": "Avoidance directive for downstream agents"\n'
+                '  "negative_knowledge_directive": "Avoidance directive for downstream agents",\n'
+                '  "requires_additional_agent": boolean,\n'
+                '  "additional_agent_spec": {"title": "...", "domain": "code"|"math"|"vision"|"audit", "reason": "...", "directive": "..."} or null\n'
                 "}"
             )
             parts = [{"text": prompt_text}]
@@ -361,6 +364,11 @@ class IntermediateReviewEngine:
 
             directive = str(eval_data.get("negative_knowledge_directive", "Downstream agents must verify prerequisite parameters."))
 
+            req_add = bool(eval_data.get("requires_additional_agent", False))
+            add_spec = eval_data.get("additional_agent_spec") or eval_data.get("additional_agent_recommendation")
+            if not isinstance(add_spec, dict):
+                add_spec = None
+
             review = IntermediateReviewResult(
                 step_id=task.step_id,
                 reviewer_model=reviewer_name,
@@ -370,7 +378,9 @@ class IntermediateReviewEngine:
                 recommendations=recs,
                 reviewer_regenerate_prompt=regen_prompt,
                 passed=is_passed,
-                mitigation_required=(not is_passed)
+                mitigation_required=(not is_passed),
+                requires_additional_agent=req_add,
+                additional_agent_spec=add_spec
             )
 
             neg = NegativeKnowledgeItem(
