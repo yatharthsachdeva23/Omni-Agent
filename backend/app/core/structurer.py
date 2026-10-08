@@ -78,6 +78,14 @@ class JSONStructurerAgent:
             f"Attached Files:\n{files_context}\n\n"
             "Decompose this request into a sequential DAG of 1 to 4 concrete sub-tasks.\n"
             "CRITICAL TASK DECOMPOSITION RULES:\n"
+            "- MINIMAL NECESSARY MILESTONES (NON-REDUNDANCY DIRECTIVE):\n"
+            "  * Only break a task into multiple sub-tasks IF genuinely required by distinct capabilities or disciplines (e.g. text generation vs. visual asset generation, code module vs. frontend HTML interface, analysis vs. binary PDF compilation).\n"
+            "  * If a request is self-contained (e.g. 'answer these questions', 'summarize this chapter', 'write an essay'), KEEP IT AS 1 SINGLE COHESIVE STEP.\n"
+            "  * NEVER create artificial, redundant sequential steps like 'extract questions', 'answer questions', 'preview layout', and 'deliver final document'.\n"
+            "  * For requests asking to solve or answer questions from an attached document and produce a PDF:\n"
+            "    - step_1: In-Depth Question Answering & Technical Solutions (domain: 'audit', Worker: 'OpenAI GPT (Auditing Specialist)', expected_output_type: 'solutions_markdown')\n"
+            "    - step_2: Publication-Grade PDF Document Compilation (domain: 'audit', Worker: 'PDF & Document Publishing Specialist', expected_output_type: 'pdf_document')\n"
+            "    This is strictly 2 purposeful, non-overlapping steps.\n"
             "- For single-domain requests (such as 'make an image of X', 'draw X', 'render photo of X'), do NOT artificially split into multiple steps like 'prompt engineering' and 'rendering'. An image request must be 1 SINGLE cohesive step (domain: 'vision'). Prompt expansion is handled internally by the visual worker.\n"
             "- Never produce two subtasks of domain 'vision' for the same image generation request.\n"
             "- CRITICAL DOMAIN RULES:\n"
@@ -100,11 +108,11 @@ class JSONStructurerAgent:
             "- step_id: e.g. 'step_1', 'step_2'\n"
             "- title: specific descriptive title tailored to what is being executed\n"
             "- domain: one of ['code', 'math', 'vision', 'audio', 'video', 'audit']\n"
-            "- description: detailed instructions for the specialized worker sub-agent\n"
-            "- assigned_worker_model: name of model best suited (e.g. 'Qwen 2.5 Coder (via Groq Cloud)', 'Gemini 2.0 Flash (Summarizer Specialist)', 'Mistral (Legal & Formal Logic Specialist)', 'Flux.1 (Visual Asset Specialist)', 'Meta MusicGen & Suno AI (Music & Audio Specialist)', 'Kling AI & CogVideoX (Motion & Video Specialist)', 'OpenAI GPT (Auditing Specialist)')\n"
+            "- description: detailed instructions for the specialized worker sub-agent. Must specify exactly what to execute and what NOT to do.\n"
+            "- assigned_worker_model: name of model best suited (e.g. 'Qwen 2.5 Coder (via Groq Cloud)', 'Gemini 2.0 Flash (Summarizer Specialist)', 'Mistral (Legal & Formal Logic Specialist)', 'Flux.1 (Visual Asset Specialist)', 'Meta MusicGen & Suno AI (Music & Audio Specialist)', 'Kling AI & CogVideoX (Motion & Video Specialist)', 'OpenAI GPT (Auditing Specialist)', 'PDF & Document Publishing Specialist')\n"
             "- assigned_reviewer_model: 'Gemini 2.0 Flash (Multimodal & Step QA Reviewer)'\n"
             "- required_prerequisites: list of prerequisites (e.g. ['Initial user objective'], ['step_1'])\n"
-            "- expected_output_type: e.g. 'code_module', 'webpage_markup', 'markdown_report', 'rendered_image_url', 'audio_track_url', 'video_clip_url', 'poem_markdown'\n\n"
+            "- expected_output_type: e.g. 'code_module', 'webpage_markup', 'markdown_report', 'rendered_image_url', 'audio_track_url', 'video_clip_url', 'poem_markdown', 'solutions_markdown', 'pdf_document'\n\n"
             "Return strictly valid JSON with this exact schema:\n"
             "{\n"
             '  "primary_objective": "Clear single-sentence encapsulation of the user\'s core goal",\n'
@@ -125,7 +133,7 @@ class JSONStructurerAgent:
             "}"
         )
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={self.gemini_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt_instruction}]}],
             "generationConfig": {
@@ -134,7 +142,7 @@ class JSONStructurerAgent:
             }
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(url, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
@@ -156,7 +164,14 @@ class JSONStructurerAgent:
             "- Domain 'vision': Strictly for generating images, thumbnails, photos, diagrams, illustrations. Worker: 'Flux.1 (Visual Asset Specialist)'.\n"
             "- Domain 'audio': Strictly for music tracks, audio generation, sound effects. Worker: 'Meta MusicGen & Suno AI (Music & Audio Specialist)'. ONLY use when user explicitly asks for music or audio!\n"
             "- Domain 'video': Strictly for video generation, motion clips, animation. Worker: 'Kling AI & CogVideoX (Motion & Video Specialist)'. ONLY use when user explicitly asks for video, motion, or animation! NEVER assign to text summaries or markdown reports!\n"
-            "- Multi-Option Independence: When generating suggestions (e.g. 3 recipes), treat them as independent standalone options, never force combining them unless explicitly asked."
+            "- Multi-Option Independence: When generating suggestions (e.g. 3 recipes), treat them as independent standalone options, never force combining them unless explicitly asked.\n"
+            "- MINIMAL NECESSARY MILESTONES (NON-REDUNDANCY DIRECTIVE):\n"
+            "  * If a request is self-contained or single-domain (e.g. 'answer these questions', 'summarize this text'), KEEP IT AS 1 SINGLE COHESIVE STEP.\n"
+            "  * NEVER artificially split into redundant steps like 'extract questions', 'answer questions', 'preview layout', and 'deliver final document'.\n"
+            "  * For requests asking to answer questions from an attached document and compile to PDF:\n"
+            "    - step_1: In-Depth Question Answering & Technical Solutions (domain: 'audit', Worker: 'OpenAI GPT (Auditing Specialist)', expected_output_type: 'solutions_markdown')\n"
+            "    - step_2: Publication-Grade PDF Document Compilation (domain: 'audit', Worker: 'PDF & Document Publishing Specialist', expected_output_type: 'pdf_document')\n"
+            "    This is strictly 2 purposeful, non-overlapping steps."
         )
         user_msg = (
             f"User Objective: \"{prompt}\"\n"
@@ -164,7 +179,7 @@ class JSONStructurerAgent:
             "Generate 1 to 4 subtasks with valid domains ('code', 'math', 'vision', 'audio', 'video', 'audit')."
         )
 
-        async with httpx.AsyncClient(timeout=12.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={
@@ -199,7 +214,8 @@ class JSONStructurerAgent:
         is_video_task = any(vt in task_text for vt in video_triggers) or any(vt in prompt_text for vt in video_triggers)
         is_text_synthesis = any(st in task_text for st in [
             "summariz", "synthesiz", "markdown report", "write a report", "table", "curate", "audit",
-            "extract points", "structure points", "list of", "deliverable_markdown", "overview", "strategy content"
+            "extract points", "structure points", "list of", "deliverable_markdown", "overview", "strategy content",
+            "pdf", "answer", "question"
         ])
 
         if domain == DomainType.VIDEO:
@@ -266,7 +282,16 @@ class JSONStructurerAgent:
             # Assign specialized worker model aligned with normalized domain
             worker_candidate = t.get("assigned_worker_model", "")
             if domain == DomainType.AUDIT:
-                if any(w in desc.lower() or w in title.lower() for w in ["summariz", "summary"]):
+                is_answering_step = any(w in title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer"])
+                is_pdf_compile = (
+                    out_type.lower() in ["pdf_document", "pdf_deliverable", "pdf"]
+                    or "pdf & document publishing specialist" in worker_candidate.lower()
+                    or any(w in title.lower() for w in ["pdf document compilation", "pdf compilation", "compile pdf", "document compilation", "pdf publishing"])
+                ) and not is_answering_step
+
+                if is_pdf_compile:
+                    worker = "PDF & Document Publishing Specialist"
+                elif any(w in desc.lower() or w in title.lower() for w in ["summariz", "summary"]):
                     worker = "Gemini 2.0 Flash (Summarizer Specialist)"
                 elif any(w in desc.lower() or w in title.lower() for w in ["compar", "tradeoff", "differ", "suitability", "profile"]):
                     worker = "Mistral (Legal & Formal Logic Specialist)"
@@ -428,19 +453,47 @@ class JSONStructurerAgent:
 
         # Check for Attached File Analysis / Exam Notes / Document Ingestion
         if files or any(w in p_lower for w in ["exam", "test", "quiz", "question", "questions and answer", "study", "prep", "notes", "lecture", "pdf", "document", "summarize", "analyze"]):
-            file_names = ", ".join([f.filename for f in files]) if files else "provided topic"
-            subtasks.append(StructuredSubTask(
-                step_id=f"step_{step_idx}",
-                title=f"In-Depth Synthesis & Deliverable Generation for '{prompt[:45]}...'",
-                domain=DomainType.AUDIT,
-                description=f"Extract key concepts from {file_names} and fulfill the user's primary deliverable: {prompt}",
-                assigned_worker_model="OpenAI GPT (Auditing Specialist)",
-                assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
-                required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["Attached documents and specifications"],
-                expected_output_type="comprehensive_deliverable_markdown",
-                status=TaskStatus.PENDING
-            ))
-            step_idx += 1
+            file_names = ", ".join([f.filename for f in files]) if files else "provided material"
+            wants_pdf = any(w in p_lower for w in ["pdf", "download as pdf", "generate pdf", "make a pdf", "in a pdf"])
+
+            if wants_pdf:
+                subtasks.append(StructuredSubTask(
+                    step_id=f"step_{step_idx}",
+                    title=f"In-Depth Question Answering & Solutions for '{prompt[:40]}...'",
+                    domain=DomainType.AUDIT,
+                    description=f"Extract and thoroughly answer every single question from {file_names} with comprehensive technical explanations, step-by-step reasoning, and complete answers. Do NOT truncate or skip any questions.",
+                    assigned_worker_model="OpenAI GPT (Auditing Specialist)",
+                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                    required_prerequisites=["Attached documents and specifications"],
+                    expected_output_type="solutions_markdown",
+                    status=TaskStatus.PENDING
+                ))
+                step_idx += 1
+                subtasks.append(StructuredSubTask(
+                    step_id=f"step_{step_idx}",
+                    title="Publication-Grade PDF Document Compilation",
+                    domain=DomainType.AUDIT,
+                    description="Compile the comprehensive verified solutions into a beautifully formatted, publication-grade PDF document ready for download.",
+                    assigned_worker_model="PDF & Document Publishing Specialist",
+                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                    required_prerequisites=[f"step_{step_idx-1}"],
+                    expected_output_type="pdf_document",
+                    status=TaskStatus.PENDING
+                ))
+                step_idx += 1
+            else:
+                subtasks.append(StructuredSubTask(
+                    step_id=f"step_{step_idx}",
+                    title=f"In-Depth Synthesis & Deliverable Generation for '{prompt[:45]}...'",
+                    domain=DomainType.AUDIT,
+                    description=f"Extract key concepts from {file_names} and fulfill the user's primary deliverable: {prompt}",
+                    assigned_worker_model="OpenAI GPT (Auditing Specialist)",
+                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                    required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["Attached documents and specifications"],
+                    expected_output_type="comprehensive_deliverable_markdown",
+                    status=TaskStatus.PENDING
+                ))
+                step_idx += 1
 
         # If no subtasks matched:
         if not subtasks:

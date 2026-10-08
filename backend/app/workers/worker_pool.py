@@ -11,6 +11,13 @@ from app.models.schemas import (
 from app.config import config
 from app.utils.handover_extractor import extract_and_sanitize_handover
 
+def sanitize_display_output(text: str) -> str:
+    """Helper to sanitize output and strip internal coordination tags for clean document compilation."""
+    if not text:
+        return ""
+    clean, _ = extract_and_sanitize_handover(text)
+    return clean
+
 def format_blackboard_prior_knowledge(
     prior_outputs: Dict[str, Any],
     cumulative_handovers: Optional[Dict[str, Any]] = None
@@ -89,7 +96,16 @@ class WorkerPool:
 
         # Route to specialist sub-agent with full Common Context Blackboard continuity
         is_creative_writing = any(w in task.title.lower() or w in task.description.lower() for w in ["poem", "poetry", "rhyme", "sonnet", "ballad", "creative story", "lyrics", "haiku"])
-        if is_creative_writing:
+        is_answering_step = any(w in task.title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer"])
+        is_pdf_specialist = (
+            "pdf & document publishing specialist" in assigned_model.lower()
+            or task.expected_output_type in ["pdf_document", "pdf_deliverable", "pdf"]
+            or any(w in task.title.lower() for w in ["pdf document compilation", "pdf compilation", "compile pdf", "document compilation", "pdf publishing"])
+        ) and not is_answering_step
+
+        if is_pdf_specialist:
+            result = await self._run_pdf_compiler(task, objective, prior_outputs, cumulative_handovers, override_prompt)
+        elif is_creative_writing:
             result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
         elif domain == DomainType.CODE or "qwen" in assigned_model.lower():
             result = await self._run_qwen_coder(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
@@ -114,6 +130,33 @@ class WorkerPool:
         result.step_id = step_id
         result.domain = domain
         result.attempt = attempt
+
+        # Auto-compile PDF hook: If user objective asked for a PDF, ensure a real .pdf artifact is attached
+        wants_pdf = any(w in objective.lower() for w in ["in a pdf", "give pdf", "as a pdf", "in pdf", "make pdf", "generate pdf", "download as pdf"])
+        if wants_pdf and not result.artifacts.get("pdf_url") and result.output_text and len(result.output_text.strip()) > 80:
+            is_dedicated_pdf_step = (
+                "pdf & document publishing specialist" in assigned_model.lower()
+                or task.expected_output_type in ["pdf_document", "pdf_deliverable"]
+            )
+            has_subsequent_pdf_step = any(
+                "pdf & document publishing specialist" in str(getattr(st, "assigned_worker_model", "")).lower() or
+                getattr(st, "expected_output_type", "") in ["pdf_document", "pdf_deliverable"]
+                for st in blackboard_context.get("all_tasks", [])
+            ) if "all_tasks" in blackboard_context else False
+
+            if not is_dedicated_pdf_step and not has_subsequent_pdf_step:
+                try:
+                    from app.utils.pdf_generator import markdown_to_pdf
+                    doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
+                    clean_for_pdf = sanitize_display_output(result.output_text)
+                    pdf_url, pdf_path = markdown_to_pdf(clean_for_pdf, title=doc_title)
+                    result.artifacts["pdf_url"] = pdf_url
+                    result.artifacts["local_path"] = str(pdf_path)
+                    result.artifacts["filename"] = pdf_path.name
+                    result.artifacts["has_pdf"] = True
+                    result.artifacts["file_size_bytes"] = pdf_path.stat().st_size
+                except Exception as auto_pdf_err:
+                    print(f"[WorkerPool] Auto-PDF compilation notice: {auto_pdf_err}")
 
         # Universal Dual-Channel Output Separation & Inter-Agent Handover Extraction
         clean_user_deliverable, handover = extract_and_sanitize_handover(
@@ -198,7 +241,7 @@ class WorkerPool:
                 prompt_gemini = f"{system_prompt}\n\n{user_msg}\n\nProvide the complete code deliverable in markdown code blocks."
                 async with httpx.AsyncClient(timeout=18.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_gemini}]}]}
                     )
                     if resp.status_code == 200:
@@ -503,7 +546,7 @@ if __name__ == "__main__":
             try:
                 async with httpx.AsyncClient(timeout=18.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_text}]}]}
                     )
                     if resp.status_code == 200:
@@ -628,7 +671,7 @@ if __name__ == "__main__":
                 prompt_gemini = f"{sys_msg}\n\n{user_msg}\n\nProvide rigorous formal derivations, formulas, or logical analysis."
                 async with httpx.AsyncClient(timeout=18.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_gemini}]}]}
                     )
                     if resp.status_code == 200:
@@ -665,6 +708,70 @@ if __name__ == "__main__":
             success=True
         )
 
+    # 3.5. PDF & DOCUMENT PUBLISHING SPECIALIST: ReportLab Native Compiler
+    async def _run_pdf_compiler(
+        self,
+        task: StructuredSubTask,
+        objective: str,
+        prior_outputs: Dict[str, Any],
+        cumulative_handovers: Optional[Dict[str, Any]] = None,
+        override_prompt: Optional[str] = None
+    ) -> WorkerResult:
+        """
+        Specialist worker that compiles verified markdown solutions/content
+        from the blackboard into a styled publication-grade PDF document.
+        """
+        from app.utils.pdf_generator import markdown_to_pdf
+
+        # Aggregate content to compile into PDF from prior outputs
+        content_parts = []
+        for sid, prev in prior_outputs.items():
+            if isinstance(prev, dict):
+                prev_text = (prev.get("full_output") or prev.get("output_text") or "").strip()
+            else:
+                prev_text = getattr(prev, "output_text", getattr(prev, "full_output", "")).strip()
+            clean_text = sanitize_display_output(prev_text)
+            if clean_text:
+                content_parts.append(clean_text)
+
+        compiled_content = "\n\n".join(content_parts)
+        if not compiled_content:
+            compiled_content = f"# {task.title}\n\nComprehensive Deliverable prepared for: {objective}\n\nCompiled by OmniTask Multi-Agent Swarm."
+
+        doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
+        for phrase in ["give me answers to these questions in a pdf", "give answers to these questions in a pdf"]:
+            if phrase in objective.lower():
+                doc_title = "Assignment Solutions & Technical Answers"
+                break
+
+        pdf_url, pdf_path = markdown_to_pdf(compiled_content, title=doc_title)
+        file_size_kb = round(pdf_path.stat().st_size / 1024, 1)
+
+        output_md = (
+            f"### 📄 Publication-Grade PDF Document Compiled\n\n"
+            f"The verified solutions have been formatted and compiled into a publication-grade PDF document.\n\n"
+            f"- **Document Title**: {doc_title}\n"
+            f"- **File Name**: `{pdf_path.name}`\n"
+            f"- **File Size**: {file_size_kb} KB\n"
+            f"- **Formatting Engine**: ReportLab Flowable Canvas (Two-Pass Numbered Pagination)\n\n"
+            f"📥 **Direct Download Link**: [Download Verified PDF ({pdf_path.name})]({pdf_url})\n"
+        )
+
+        return WorkerResult(
+            step_id=task.step_id,
+            worker_model="PDF & Document Publishing Specialist",
+            domain=DomainType.AUDIT,
+            output_text=output_md,
+            artifacts={
+                "pdf_url": pdf_url,
+                "local_path": str(pdf_path),
+                "filename": pdf_path.name,
+                "has_pdf": True,
+                "file_size_bytes": pdf_path.stat().st_size
+            },
+            success=True
+        )
+
     # 4. AUDITOR & EXAM/DOCUMENT SPECIALIST: OpenAI GPT (OpenRouter -> Gemini -> Groq -> Dynamic Auditor)
     async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None) -> WorkerResult:
         prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
@@ -693,28 +800,40 @@ if __name__ == "__main__":
         system_content = (
             "You are the OpenAI GPT Specialist for OmniTask AI.\n"
             "Fulfill the user's task with rigor and high fidelity.\n"
+            "CRITICAL MILESTONE BOUNDARY PROTOCOL:\n"
+            "- You are specifically assigned to execute this milestone action directive.\n"
+            "- Focus exclusively on your assigned milestone. Do NOT pre-empt downstream milestones or summarize deliverables belonging to other agents.\n"
+            "- If attached reference materials, assignments, or PDFs are provided, you MUST read and analyze them thoroughly.\n"
+            "- If the task involves answering questions or solving problems from attached materials, you MUST provide full, thorough, and exhaustive answers for EVERY single question without truncating, skipping, or leaving questions unfinished!\n"
             "MULTI-AGENT CONTINUITY DIRECTIVE:\n"
             "Build directly upon verified deliverables and handovers established on the Common Context Blackboard above.\n"
             "COLLABORATIVE DUAL-CHANNEL PROTOCOL:\n"
             "Deliver your complete deliverable for the user without conversational meta-notes to other agents.\n"
             "If downstream agents require parameters or target objects, append: <agent_handover>{\"target_subject\": \"...\"}</agent_handover> at the end.\n"
-            "IMPORTANT NOTE ON ATTACHMENTS: If attached reference materials, notes, or PDFs are provided below, "
-            "their full text has been extracted and provided directly to you. You MUST read and analyze them thoroughly, "
-            "directly cite/use concepts from the notes, and produce the requested deliverables (e.g. top questions with answers, "
-            "audits, summaries, or analyses). Do NOT say you cannot access files or attachments.\n\n"
             "MULTI-OPTION INDEPENDENCE DIRECTIVE (SMART MODE):\n"
             "- If the task involves suggesting recipes, culinary concepts, or project ideas and you are providing multiple options (e.g. 3 paneer recipes):\n"
-            "  * ALWAYS present each recipe as an INDEPENDENT, STANDALONE VIDEO PROJECT (e.g. 'Option 1: Shahi Paneer (Royal Mughlai Style)', 'Option 2: Paneer Butter Masala (Creamy Dhaba Style)', 'Option 3: Palak Paneer (Homestyle Vibrant Green)').\n"
+            "  * ALWAYS present each recipe as an INDEPENDENT, STANDALONE VIDEO PROJECT.\n"
             "  * Provide full, exact ingredient measurements and step-by-step cooking techniques for each option individually.\n"
-            "  * NEVER instruct or advise the creator to cram all 3 recipes into a single video unless the user specifically asked for a combo platter video. Treat them as 3 distinct video choices for their channel or a 3-part video series!"
+            "  * NEVER instruct or advise the creator to cram all 3 recipes into a single video unless the user specifically asked for a combo platter video.\n"
             f"{secrecy_rule}"
         )
-        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{override_note}\n{prior_context}{attached_files_text}"
+        user_msg = (
+            f"=== ASSIGNED MILESTONE: {task.title} ===\n"
+            f"EXACT ACTION DIRECTIVE: {task.description}\n"
+            f"EXPECTED DELIVERABLE TYPE: {task.expected_output_type}\n\n"
+            f"OVERALL PROJECT CONTEXT (For Background Reference Only): \"{objective}\"{override_note}\n\n"
+            f"CRITICAL BOUNDARY INSTRUCTIONS:\n"
+            f"- Fulfill your specific milestone directive: \"{task.description}\" with 100% completeness and rigor.\n"
+            f"- DO NOT wander outside this milestone or execute future tasks belonging to other agents.\n"
+            f"- If answering questions from the attached materials, provide complete, full-length answers to ALL questions.\n\n"
+            f"{attached_files_text}\n"
+            f"{prior_context}"
+        )
 
         # 1. Try OpenRouter (GPT-4o-mini)
         if self.openrouter_key:
             try:
-                async with httpx.AsyncClient(timeout=25.0) as client:
+                async with httpx.AsyncClient(timeout=35.0) as client:
                     resp = await client.post(
                         "https://openrouter.ai/api/v1/chat/completions",
                         headers={
@@ -748,14 +867,14 @@ if __name__ == "__main__":
                 prompt_gemini = f"{system_content}\n\n{user_msg}\n\nProduce the comprehensive deliverable fulfilling the user's request."
                 async with httpx.AsyncClient(timeout=25.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_gemini}]}]}
                     )
                     if resp.status_code == 200:
                         text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
                         return WorkerResult(
                             step_id=task.step_id,
-                            worker_model="OpenAI Specialist (Gemini 2.0 Fallback)",
+                            worker_model="OpenAI Specialist (Gemini Flash Lite Fallback)",
                             domain=DomainType.AUDIT,
                             output_text=text,
                             artifacts={"audit_model": "gemini-auditor-fallback"},
@@ -931,7 +1050,7 @@ if __name__ == "__main__":
             try:
                 async with httpx.AsyncClient(timeout=6.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt}]}]}
                     )
                     if resp.status_code == 200:
@@ -1306,7 +1425,24 @@ if __name__ == "__main__":
             except Exception:
                 pass
 
-        local_audio_url = f"/api/generated-media/audio_{audio_id}.mp3" if has_binary_audio else None
+        # Synthesize genuine harmonic audio track via Wave/FFmpeg if external APIs not available
+        if not has_binary_audio:
+            try:
+                from app.utils.media_generator import synthesize_audio_track
+                audio_url, audio_path = synthesize_audio_track(
+                    title=task.title or objective,
+                    genre=genre,
+                    bpm=bpm,
+                    duration_sec=16,
+                    output_dir=gen_dir
+                )
+                has_binary_audio = True
+                local_audio_url = audio_url
+                engine_name = f"Omni Harmonic Audio Synthesis ({genre})"
+            except Exception as synth_err:
+                print(f"[Audio Generator] Audio synthesis notice: {synth_err}")
+
+        local_audio_url = local_audio_url or (f"/api/generated-media/audio_{audio_id}.mp3" if has_binary_audio else None)
 
         output_md = (
             f"### 🎵 Audio Track & Music Production Blueprint\n"
@@ -1318,7 +1454,7 @@ if __name__ == "__main__":
             f"- **Engine**: {engine_name}\n"
         )
         if has_binary_audio and local_audio_url:
-            output_md += f"\n**Audio Asset Link**: [Play / Download Generated Soundtrack]({local_audio_url})\n"
+            output_md += f"\n**Audio Asset Link**: [Play / Download Generated Soundtrack ({genre})]({local_audio_url})\n"
         else:
             output_md += (
                 f"\n**Production Sound Recipe (Plug & Play)**:\n"
@@ -1336,7 +1472,8 @@ if __name__ == "__main__":
                 "engine": engine_name,
                 "has_audio": has_binary_audio,
                 "bpm": bpm,
-                "key": key
+                "key": key,
+                "filename": Path(local_audio_url).name if local_audio_url else f"audio_{audio_id}.mp3"
             },
             success=True
         )
@@ -1376,9 +1513,9 @@ if __name__ == "__main__":
 
         if self.gemini_key:
             try:
-                async with httpx.AsyncClient(timeout=8.0) as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_key}",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={self.gemini_key}",
                         json={"contents": [{"parts": [{"text": prompt_llm}]}]}
                     )
                     if resp.status_code == 200:
@@ -1421,13 +1558,37 @@ if __name__ == "__main__":
 
             storyboard_content = f"{shot1}\n\n{shot2}\n\n**Prompt for Kling AI / CogVideoX**:\n`\"{prompt_cue}\"`"
 
+        if not has_video:
+            try:
+                from app.utils.media_generator import synthesize_video_clip
+                prev_img = None
+                for prev in prior_outputs.values():
+                    art = prev.get("artifacts", {}) if isinstance(prev, dict) else getattr(prev, "artifacts", {})
+                    if art.get("local_path") and Path(art["local_path"]).exists():
+                        prev_img = art["local_path"]
+                        break
+
+                video_url, video_path = synthesize_video_clip(
+                    title=task.title or objective,
+                    duration_sec=4,
+                    image_path=prev_img,
+                    output_dir=gen_dir
+                )
+                has_video = True
+                local_vid_url = video_url
+                engine_name = "Omni Cinematic Motion Synthesis (MP4 H.264)"
+            except Exception as vid_err:
+                print(f"[Video Generator] Motion synthesis notice: {vid_err}")
+
+        local_vid_url = local_vid_url or (f"/api/generated-media/video_{vid_id}.mp4" if has_video else None)
+
         output_md = (
             f"### 🎬 Cinematic Video Storyboard & Motion Render\n"
             f"*Generated by {engine_name}*\n\n"
             f"{storyboard_content}\n"
         )
         if has_video and local_vid_url:
-            output_md += f"\n**Rendered Video Asset**: [Download 4K Video Clip]({local_vid_url})\n"
+            output_md += f"\n**Rendered Video Asset**: [Play / Download 1080p Video Clip (.mp4)]({local_vid_url})\n"
 
         return WorkerResult(
             step_id=task.step_id,
@@ -1438,7 +1599,8 @@ if __name__ == "__main__":
                 "video_url": local_vid_url,
                 "engine": engine_name,
                 "has_video": has_video,
-                "framerate": "24fps / 60fps"
+                "framerate": "24fps / 60fps",
+                "filename": Path(local_vid_url).name if local_vid_url else f"video_{vid_id}.mp4"
             },
             success=True
         )

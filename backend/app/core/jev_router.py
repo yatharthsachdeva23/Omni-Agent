@@ -144,7 +144,16 @@ class JevFastRouter:
             if domain_str == "code":
                 worker_model = self.worker_dispatch_table["code"]
             elif domain_str in ["audit", "general"]:
-                if "summary" in task.title.lower() or "summariz" in task.description.lower():
+                is_answering_step = any(w in task.title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer"])
+                is_pdf_step = (
+                    (task.expected_output_type or "").lower() in ["pdf_document", "pdf_deliverable", "pdf"]
+                    or (task.assigned_worker_model or "") == "PDF & Document Publishing Specialist"
+                    or any(w in task.title.lower() for w in ["pdf document compilation", "pdf compilation", "compile pdf", "document compilation", "pdf publishing"])
+                ) and not is_answering_step
+
+                if is_pdf_step:
+                    worker_model = "PDF & Document Publishing Specialist"
+                elif "summary" in task.title.lower() or "summariz" in task.description.lower():
                     worker_model = self.worker_dispatch_table["summary"]
                 elif any(w in task.title.lower() or w in task.description.lower() for w in ["compar", "tradeoff", "differ", "suitability", "profile"]):
                     worker_model = self.worker_dispatch_table["legal_logic"]

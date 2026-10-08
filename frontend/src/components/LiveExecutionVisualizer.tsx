@@ -23,7 +23,8 @@ import {
   Gift,
   Music,
   CheckSquare,
-  Target
+  Target,
+  FileText
 } from 'lucide-react';
 import {
   StructuredGoal,
@@ -49,6 +50,12 @@ interface FileDownloadInfo {
   mimeType: string;
   isImage?: boolean;
   imageUrl?: string;
+  isPdf?: boolean;
+  pdfUrl?: string;
+  isVideo?: boolean;
+  videoUrl?: string;
+  isAudio?: boolean;
+  audioUrl?: string;
   extension: string;
 }
 
@@ -73,12 +80,49 @@ const parseDeliverableFile = (
   const safeName =
     title
       .toLowerCase()
-      .replace(/^(modular implementation & architecture for|web & ui implementation for|visual asset render for|compose creative poem for|execution & synthesis of|in-depth synthesis & deliverable generation for)\s*/i, '')
+      .replace(/^(modular implementation & architecture for|web & ui implementation for|visual asset render for|compose creative poem for|execution & synthesis of|in-depth synthesis & deliverable generation for|in-depth question answering & solutions for)\s*/i, '')
       .replace(/[^a-z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '')
       .slice(0, 36) || 'deliverable';
 
-  // 1. Check for Image asset
+  // 1. Check for PDF document asset
+  if (artifacts?.pdf_url) {
+    return {
+      filename: artifacts.filename || `${safeName}.pdf`,
+      content: '',
+      mimeType: 'application/pdf',
+      isPdf: true,
+      pdfUrl: artifacts.pdf_url,
+      extension: 'PDF',
+    };
+  }
+
+  // 2. Check for Video asset
+  if (artifacts?.video_url) {
+    return {
+      filename: artifacts.filename || `${safeName}.mp4`,
+      content: '',
+      mimeType: 'video/mp4',
+      isVideo: true,
+      videoUrl: artifacts.video_url,
+      extension: 'MP4',
+    };
+  }
+
+  // 3. Check for Audio track
+  if (artifacts?.audio_url) {
+    const isWav = artifacts.audio_url.endsWith('.wav');
+    return {
+      filename: artifacts.filename || `${safeName}.${isWav ? 'wav' : 'mp3'}`,
+      content: '',
+      mimeType: isWav ? 'audio/wav' : 'audio/mpeg',
+      isAudio: true,
+      audioUrl: artifacts.audio_url,
+      extension: isWav ? 'WAV' : 'MP3',
+    };
+  }
+
+  // 4. Check for Image asset
   if (artifacts?.image_url) {
     return {
       filename: `${safeName}.jpg`,
@@ -90,7 +134,7 @@ const parseDeliverableFile = (
     };
   }
 
-  // 2. Check for fenced code blocks
+  // 5. Check for fenced code blocks
   const codeMatch = text.match(/```([a-zA-Z0-9_+-]*)\s*\n([\s\S]*?)```/);
   if (codeMatch) {
     const lang = (codeMatch[1] || '').toLowerCase().trim();
@@ -196,9 +240,10 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
   };
 
   const handleDownload = async (fileInfo: FileDownloadInfo) => {
-    if (fileInfo.isImage && fileInfo.imageUrl) {
+    const binaryUrl = fileInfo.pdfUrl || fileInfo.videoUrl || fileInfo.audioUrl || fileInfo.imageUrl;
+    if (binaryUrl) {
       try {
-        const response = await fetch(fileInfo.imageUrl);
+        const response = await fetch(binaryUrl);
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -210,7 +255,7 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
         window.URL.revokeObjectURL(url);
       } catch {
         const a = document.createElement('a');
-        a.href = fileInfo.imageUrl;
+        a.href = binaryUrl;
         a.download = fileInfo.filename;
         a.target = '_blank';
         document.body.appendChild(a);
@@ -526,6 +571,95 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                               </button>
                             </div>
                           </div>
+                          {/* PDF Document Deliverable Card */}
+                          {(output.artifacts?.pdf_url || fileInfo.isPdf) && (
+                            <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.04] p-3.5 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                                  <FileText className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <h4 className="text-xs font-semibold text-white font-mono">{fileInfo.filename}</h4>
+                                  <p className="text-[10px] text-blue-300/80 font-mono">Verified Publication-Quality PDF Document • ReportLab Engine</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <a
+                                  href={output.artifacts?.pdf_url || fileInfo.pdfUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono"
+                                >
+                                  <span>View PDF</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                                <button
+                                  onClick={() => handleDownload(fileInfo)}
+                                  className="flex items-center gap-1.5 px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white transition text-[11px] font-mono font-medium shadow-md"
+                                  title="Download PDF (.pdf)"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  <span>Download PDF (.pdf)</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Video Asset Deliverable Card */}
+                          {(output.artifacts?.video_url || fileInfo.isVideo) && (
+                            <div className="rounded-xl overflow-hidden border border-purple-500/30 bg-[#050505] p-2 space-y-2">
+                              <video
+                                src={output.artifacts?.video_url || fileInfo.videoUrl}
+                                controls
+                                className="w-full h-auto max-h-96 rounded-lg bg-black"
+                              />
+                              <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
+                                <span>Cinematic Motion Video • H.264 MP4</span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handleDownload(fileInfo)}
+                                    className="text-neutral-300 hover:text-white flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px]"
+                                    title="Download video (.mp4)"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    <span>Download Video (.mp4)</span>
+                                  </button>
+                                  <a
+                                    href={output.artifacts?.video_url || fileInfo.videoUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-white hover:underline flex items-center gap-1"
+                                  >
+                                    Open Video &rarr;
+                                  </a>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Audio Track Deliverable Card */}
+                          {(output.artifacts?.audio_url || fileInfo.isAudio) && (
+                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.03] p-3 space-y-2">
+                              <audio
+                                src={output.artifacts?.audio_url || fileInfo.audioUrl}
+                                controls
+                                className="w-full h-10 rounded"
+                              />
+                              <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
+                                <span>Audio Track • {fileInfo.extension}</span>
+                                <button
+                                  onClick={() => handleDownload(fileInfo)}
+                                  className="text-neutral-300 hover:text-white flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px]"
+                                  title={`Download audio (.${fileInfo.extension.toLowerCase()})`}
+                                >
+                                  <Download className="w-3 h-3" />
+                                  <span>Download Audio (.{fileInfo.extension.toLowerCase()})</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Image Asset Deliverable Card */}
                           {output.artifacts?.image_url && (
                             <div className="rounded-xl overflow-hidden border border-white/[0.12] bg-[#050505] p-2 space-y-2">
                               <img
@@ -839,6 +973,95 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                       </div>
                     </div>
 
+                    {/* PDF Document Deliverable Card */}
+                    {(del.artifacts?.pdf_url || fileInfo.isPdf) && (
+                      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.04] p-3.5 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-semibold text-white font-mono">{fileInfo.filename}</h4>
+                            <p className="text-[10px] text-blue-300/80 font-mono">Verified Publication-Quality PDF Document • ReportLab Engine</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={del.artifacts?.pdf_url || fileInfo.pdfUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono"
+                          >
+                            <span>View PDF</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                          <button
+                            onClick={() => handleDownload(fileInfo)}
+                            className="flex items-center gap-1.5 px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white transition text-[11px] font-mono font-medium shadow-md"
+                            title="Download PDF (.pdf)"
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>Download PDF (.pdf)</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Video Asset Deliverable Card */}
+                    {(del.artifacts?.video_url || fileInfo.isVideo) && (
+                      <div className="rounded-xl overflow-hidden border border-purple-500/30 bg-[#050505] p-2 space-y-2">
+                        <video
+                          src={del.artifacts?.video_url || fileInfo.videoUrl}
+                          controls
+                          className="w-full h-auto max-h-96 rounded-lg bg-black"
+                        />
+                        <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
+                          <span>Cinematic Motion Video • H.264 MP4</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleDownload(fileInfo)}
+                              className="text-neutral-300 hover:text-white flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px]"
+                              title="Download video (.mp4)"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>Download Video (.mp4)</span>
+                            </button>
+                            <a
+                              href={del.artifacts?.video_url || fileInfo.videoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-white hover:underline flex items-center gap-1"
+                            >
+                              Open Video &rarr;
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Audio Track Deliverable Card */}
+                    {(del.artifacts?.audio_url || fileInfo.isAudio) && (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.03] p-3 space-y-2">
+                        <audio
+                          src={del.artifacts?.audio_url || fileInfo.audioUrl}
+                          controls
+                          className="w-full h-10 rounded"
+                        />
+                        <div className="flex items-center justify-between px-1 text-[11px] font-mono text-neutral-400">
+                          <span>Audio Track • {fileInfo.extension}</span>
+                          <button
+                            onClick={() => handleDownload(fileInfo)}
+                            className="text-neutral-300 hover:text-white flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px]"
+                            title={`Download audio (.${fileInfo.extension.toLowerCase()})`}
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>Download Audio (.{fileInfo.extension.toLowerCase()})</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Image Asset Deliverable Card */}
                     {del.artifacts?.image_url && (
                       <div className="rounded-xl overflow-hidden border border-white/[0.12] bg-[#050505] p-2 space-y-2">
                         <img
