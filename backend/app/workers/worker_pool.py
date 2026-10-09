@@ -26,14 +26,15 @@ def clean_delimiter_markers(text: str) -> str:
 
 def split_quiz_and_answer_key(content: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    Splits content into (questions_doc, answer_key_doc) if a clear separate answer key delimiter exists.
+    Splits content into (questions_doc, answer_key_doc) if a clear separate answer key delimiter exists,
+    or extracts interleaved answers into a dedicated answer key document.
     Returns (doc1, doc2) or (None, None).
     """
     if not content:
         return None, None
 
-    # Pattern 1: === DOCUMENT 1 ... === and === DOCUMENT 2 ... ===
-    m_doc2 = re.search(r'={2,}\s*DOCUMENT\s*2\s*[:\-–—]?\s*(.*?)\s*={2,}', content, re.IGNORECASE)
+    # Pattern 1: === DOCUMENT 1 ... === and === DOCUMENT 2 ... === (or PART 1 / PART 2)
+    m_doc2 = re.search(r'={2,}\s*(?:DOCUMENT\s*2|PART\s*2)\s*[:\-–—]?\s*(.*?)\s*={2,}', content, re.IGNORECASE)
     if m_doc2:
         split_idx = m_doc2.start()
         doc1_raw = content[:split_idx].strip()
@@ -54,8 +55,12 @@ def split_quiz_and_answer_key(content: str) -> Tuple[Optional[str], Optional[str
         if len(doc1) > 50 and len(doc2) > 50:
             return doc1, doc2
 
-    # Pattern 3: Heading '# ... Answer Key' or '## ... Answer Key'
-    m_h_ans = re.search(r'\n(?=#{1,3}\s+(?:[A-Za-z0-9_\-:\s]+)?(?:Answer\s+Key|Solutions\s+and\s+Answer\s+Key|Solutions\s+Key|Solutions\s+&\s+Explanations))', content, re.IGNORECASE)
+    # Pattern 3: Heading '# ... Answer Key', '## Answers', '## Solutions', etc.
+    m_h_ans = re.search(
+        r'\n(?=(?:---+\s*\n\s*)?#{1,4}\s+(?:[A-Za-z0-9_\-:\s]+)?(?:Answer\s+Key|Solutions|Answers|Answer\s+Keys|Solutions\s+and\s+Explanations|Solutions\s+Key|Answer\s+Guide|Complete\s+Solutions|Answers\s+&\s+Explanations))',
+        content,
+        re.IGNORECASE
+    )
     if m_h_ans:
         split_idx = m_h_ans.start()
         doc1 = clean_delimiter_markers(content[:split_idx].strip())
@@ -63,7 +68,120 @@ def split_quiz_and_answer_key(content: str) -> Tuple[Optional[str], Optional[str
         if len(doc1) > 80 and len(doc2) > 80:
             return doc1, doc2
 
+    # Pattern 3b: Bold header '**Answer Key**' or '**Solutions & Explanations**'
+    m_bold_ans = re.search(
+        r'\n(?=(?:---+\s*\n\s*)?(?:\*{2}|_{2})(?:Answer\s+Key|Solutions|Answers|Solutions\s+and\s+Explanations|Answers\s+&\s+Explanations)(?:\*{2}|_{2}))',
+        content,
+        re.IGNORECASE
+    )
+    if m_bold_ans:
+        split_idx = m_bold_ans.start()
+        doc1 = clean_delimiter_markers(content[:split_idx].strip())
+        doc2 = clean_delimiter_markers(content[split_idx:].strip())
+        if len(doc1) > 80 and len(doc2) > 80:
+            return doc1, doc2
+
+    # Pattern 4: Interleaved answers (e.g. 'Correct Answer: B' or '**Answer:**' under each question)
+    ans_markers = list(re.finditer(
+        r'(?:(?:\*{1,2})?(?:Correct\s+Answer|Answer\s*Key|\bAnswer|Key)(?:\*{1,2})?\s*[:\-–—])',
+        content,
+        re.IGNORECASE
+    ))
+    if len(ans_markers) >= 2:
+        lines = content.split('\n')
+        q_lines = []
+        ans_lines = []
+        in_ans = False
+        ans_block = []
+        curr_q_num = None
+
+        m_h1 = re.search(r'^\s*#\s+(.+)$', content, re.MULTILINE)
+        doc_h1 = re.sub(r'[*_`]', '', m_h1.group(1)).strip() if m_h1 else "Quiz"
+        doc_h1 = re.sub(r'(?:—\s*Answer\s*Key.*|:\s*Answer\s*Key.*)$', '', doc_h1, flags=re.IGNORECASE).strip()
+        ans_lines.append(f"# {doc_h1} — Answer Key & Solutions\n")
+
+        for line in lines:
+            stripped = line.strip()
+
+            m_q = re.match(r'^(?:Q(?:uestion)?\s*)?(\d+[\.\)])\s*(.*)', stripped, re.IGNORECASE)
+            if m_q:
+                if ans_block:
+                    ans_lines.extend(ans_block)
+                    ans_block = []
+                curr_q_num = m_q.group(1)
+                in_ans = False
+                q_lines.append(line)
+                continue
+
+            if stripped.startswith('#'):
+                if ans_block:
+                    ans_lines.extend(ans_block)
+                    ans_block = []
+                in_ans = False
+                q_lines.append(line)
+                clean_sec = stripped.replace('#', '').strip()
+                ans_lines.append(f"\n## {clean_sec} — Solutions & Explanations\n")
+                continue
+
+            is_ans_marker = bool(re.match(
+                r'^(?:\*{1,2})?(?:Correct\s+Answer|Answer\s*Key|\bAnswer|Solution|Explanation|Rationale)(?:\*{1,2})?\s*[:\-–—]',
+                stripped,
+                re.IGNORECASE
+            ))
+            if is_ans_marker:
+                in_ans = True
+                if curr_q_num and not any(curr_q_num in l for l in ans_block):
+                    ans_block.append(f"### Question {curr_q_num}")
+                ans_block.append(line)
+                continue
+
+            if in_ans:
+                if re.match(r'^[A-D]\)', stripped):
+                    in_ans = False
+                    if ans_block:
+                        ans_lines.extend(ans_block)
+                        ans_block = []
+                    q_lines.append(line)
+                else:
+                    ans_block.append(line)
+            else:
+                q_lines.append(line)
+
+        if ans_block:
+            ans_lines.extend(ans_block)
+
+        doc1 = '\n'.join(q_lines).strip()
+        doc2 = '\n'.join(ans_lines).strip()
+        if len(doc1) > 80 and len(doc2) > 80:
+            return doc1, doc2
+
     return None, None
+
+def derive_single_doc_title(task_title: str, objective: str, content: str) -> str:
+    """Derives a clean user-facing title for a single document deliverable, avoiding internal pipeline step names."""
+    m_course = re.search(r'\b([A-Z]{2,4}\s*\d{3,4})\b', (objective + " " + content)[:500], re.IGNORECASE)
+    course_str = f"{m_course.group(1).upper()}: " if m_course else ""
+
+    m_h1 = re.search(r'^\s*#\s+(.+)$', content, re.MULTILINE)
+    h1_text = ""
+    if m_h1:
+        h1_text = re.sub(r'[*_`]', '', m_h1.group(1)).strip()
+        h1_text = re.sub(r'(?:—\s*Answer\s*Key.*|:\s*Answer\s*Key.*)$', '', h1_text, flags=re.IGNORECASE).strip()
+
+    if h1_text and not any(b in h1_text.lower() for b in ["omnitask", "deliverable", "compilation", "official deliverable"]):
+        return h1_text
+
+    if "quiz" in objective.lower():
+        topic = re.sub(r'(?:create|make|generate|give|write|prepare)\s+(?:a\s+|an\s+)?quiz\s+(?:on|for|about)?\s*', '', objective, flags=re.IGNORECASE).strip()
+        topic = re.sub(r'\s+(?:in|as|with)\s+.*$', '', topic, flags=re.IGNORECASE).strip()
+        if topic and len(topic) < 50:
+            return f"{course_str}{topic.title()} Quiz"
+        return f"{course_str}Generative AI Quiz" if "generative ai" in objective.lower() else f"{course_str}Comprehensive Quiz"
+
+    if task_title and not any(b in task_title.lower() for b in ["compilation", "omnitask", "sub-task", "publishing"]):
+        return task_title
+
+    return f"{course_str}Technical Document Deliverable"
 
 def derive_clean_doc_titles(task_title: str, objective: str, content: str) -> Tuple[str, str, str, str]:
     """
@@ -79,7 +197,7 @@ def derive_clean_doc_titles(task_title: str, objective: str, content: str) -> Tu
         h1_text = re.sub(r'[*_`]', '', m_h1.group(1)).strip()
         h1_text = re.sub(r'(?:—\s*Answer\s*Key.*|:\s*Answer\s*Key.*)$', '', h1_text, flags=re.IGNORECASE).strip()
 
-    if h1_text and not any(b in h1_text.lower() for b in ["omnitask", "deliverable", "compilation"]):
+    if h1_text and not any(b in h1_text.lower() for b in ["omnitask", "deliverable", "compilation", "official deliverable"]):
         base_name = h1_text
     elif "quiz" in objective.lower():
         topic = re.sub(r'(?:create|make|generate|give|write|prepare)\s+(?:a\s+|an\s+)?quiz\s+(?:on|for|about)?\s*', '', objective, flags=re.IGNORECASE).strip()
@@ -272,7 +390,7 @@ class WorkerPool:
                         result.artifacts["has_separate_answer_key"] = True
                         result.artifacts["file_size_bytes"] = pdf1_path.stat().st_size
                     else:
-                        doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
+                        doc_title = derive_single_doc_title(task.title, objective, clean_for_pdf)
                         pdf_url, pdf_path = markdown_to_pdf(clean_for_pdf, title=doc_title)
                         result.artifacts["pdf_url"] = pdf_url
                         result.artifacts["local_path"] = str(pdf_path)
@@ -316,7 +434,7 @@ class WorkerPool:
                         result.artifacts["has_separate_answer_key"] = True
                         result.artifacts["docx_size_bytes"] = docx1_path.stat().st_size
                     else:
-                        doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
+                        doc_title = derive_single_doc_title(task.title, objective, clean_for_docx)
                         docx_url, docx_path = markdown_to_docx(clean_for_docx, title=doc_title)
                         result.artifacts["docx_url"] = docx_url
                         result.artifacts["download_url"] = docx_url
@@ -1061,11 +1179,7 @@ if __name__ == "__main__":
         # ----------------------------------------------------
         # CASE B: SINGLE-FILE DELIVERABLE
         # ----------------------------------------------------
-        doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
-        for phrase in ["give me answers to these questions in a pdf", "give answers to these questions in a pdf"]:
-            if phrase in objective.lower():
-                doc_title = "Assignment Solutions & Technical Answers"
-                break
+        doc_title = derive_single_doc_title(task.title, objective, compiled_content)
 
         if is_word_requested:
             docx_url, docx_path = markdown_to_docx(compiled_content, title=doc_title)

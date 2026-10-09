@@ -111,6 +111,13 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
       html = `<p>${text}</p>`;
     }
 
+    // Step 5b: Ensure all links open in a separate tab and do not hijack the app window
+    html = html.replace(/<a\s+(href="[^"]*")/gi, (match, hrefPart) => {
+      const isFile = /\.(pdf|docx|doc|zip|mp4|wav|mp3|png|jpg|jpeg)(?:\?|$)/i.test(hrefPart) || hrefPart.includes('/api/generated-');
+      const downloadAttr = isFile ? 'download' : '';
+      return `<a target="_blank" rel="noopener noreferrer" ${downloadAttr} class="text-blue-400 hover:text-blue-300 underline inline-flex items-center gap-1 font-medium cursor-pointer transition" ${hrefPart}`;
+    });
+
     // Step 6: Restore block math placeholders (cleanly replace any surrounding <p> tags)
     html = html.replace(/<p>\s*@@@MATH_BLOCK_(\d+)@@@\s*<\/p>/g, (_, id) => {
       const mathHtml = mathPlaceholders[Number(id)] || '';
@@ -130,8 +137,34 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
     return html;
   }, [content]);
 
+  // Click interceptor: Guarantees links in markdown never hijack or navigate away from the current application state
+  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = (e.target as HTMLElement).closest('a');
+    if (!target) return;
+    const href = target.getAttribute('href');
+    if (!href) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const isDocx = /\.docx(?:\?|$)/i.test(href);
+    if (isDocx) {
+      // Trigger background download for Word files
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = href.split('/').pop()?.split('?')[0] || 'document.docx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
+      // Open PDF, media, or web URLs in a separate new tab
+      window.open(href, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   return (
     <div
+      onClick={handleContainerClick}
       className={`markdown-body text-sm text-neutral-200 leading-relaxed font-sans space-y-3 ${className}`}
       dangerouslySetInnerHTML={{ __html: renderedHtml }}
     />

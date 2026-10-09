@@ -91,35 +91,102 @@ const parseDeliverableFile = (
       .replace(/^_+|_+$/g, '')
       .slice(0, 36) || 'deliverable';
 
-  // 1. Check for Word (.docx) document asset
-  if (artifacts?.docx_url || artifacts?.has_docx) {
-    const docxUrl = artifacts.docx_url || artifacts.download_url;
+  // 1. Check for Word (.docx) document asset from artifacts OR rawText
+  const docxMarkdownMatches = Array.from(rawText.matchAll(/\[([^\]]*)\]\(([^)]+\.docx)\)/gi));
+  const docxUrlMatches = Array.from(rawText.matchAll(/(?:href=["']|\b)(\/api\/generated-media\/[a-zA-Z0-9_\-]+\.docx)/gi));
+
+  let detectedDocxUrl =
+    artifacts?.docx_url ||
+    artifacts?.download_url ||
+    (artifacts?.filename?.toLowerCase().endsWith('.docx') ? `/api/generated-media/${artifacts.filename}` : undefined);
+  let detectedDocxFilename = artifacts?.docx_filename || (artifacts?.filename?.toLowerCase().endsWith('.docx') ? artifacts.filename : undefined);
+  let detectedDocxAnswerKeyUrl = artifacts?.docx_answer_key_url;
+  let detectedDocxAnswerKeyFilename = artifacts?.docx_answer_key_filename;
+
+  if (!detectedDocxUrl) {
+    if (docxMarkdownMatches.length > 0) {
+      for (const m of docxMarkdownMatches) {
+        const linkText = m[1].toLowerCase();
+        const linkUrl = m[2];
+        const fname = linkUrl.split('/').pop()?.split('?')[0] || 'document.docx';
+        if (linkText.includes('answer') || linkText.includes('key') || linkText.includes('solution') || fname.toLowerCase().includes('answer')) {
+          detectedDocxAnswerKeyUrl = linkUrl;
+          detectedDocxAnswerKeyFilename = fname;
+        } else if (!detectedDocxUrl) {
+          detectedDocxUrl = linkUrl;
+          detectedDocxFilename = fname;
+        }
+      }
+      if (!detectedDocxUrl && docxMarkdownMatches[0]) {
+        detectedDocxUrl = docxMarkdownMatches[0][2];
+        detectedDocxFilename = detectedDocxUrl.split('/').pop()?.split('?')[0] || 'document.docx';
+      }
+    } else if (docxUrlMatches.length > 0) {
+      detectedDocxUrl = docxUrlMatches[0][1];
+      detectedDocxFilename = detectedDocxUrl.split('/').pop()?.split('?')[0] || 'document.docx';
+      if (docxUrlMatches.length > 1) {
+        detectedDocxAnswerKeyUrl = docxUrlMatches[1][1];
+        detectedDocxAnswerKeyFilename = detectedDocxAnswerKeyUrl.split('/').pop()?.split('?')[0] || 'Answer_Key.docx';
+      }
+    }
+  }
+
+  // Also check for PDF links in rawText if pdf_url is missing
+  let detectedPdfUrl = artifacts?.pdf_url;
+  let detectedPdfFilename = artifacts?.pdf_filename;
+  let detectedPdfAnswerKeyUrl = artifacts?.pdf_answer_key_url;
+  let detectedPdfAnswerKeyFilename = artifacts?.pdf_answer_key_filename;
+
+  if (!detectedPdfUrl) {
+    const pdfMarkdownMatches = Array.from(rawText.matchAll(/\[([^\]]*)\]\(([^)]+\.pdf)\)/gi));
+    for (const m of pdfMarkdownMatches) {
+      const linkText = m[1].toLowerCase();
+      const linkUrl = m[2];
+      const fname = linkUrl.split('/').pop()?.split('?')[0] || 'document.pdf';
+      if (linkText.includes('answer') || linkText.includes('key') || linkText.includes('solution') || fname.toLowerCase().includes('answer')) {
+        detectedPdfAnswerKeyUrl = linkUrl;
+        detectedPdfAnswerKeyFilename = fname;
+      } else if (!detectedPdfUrl) {
+        detectedPdfUrl = linkUrl;
+        detectedPdfFilename = fname;
+      }
+    }
+  }
+
+  const isDocxFile = Boolean(
+    detectedDocxUrl ||
+    artifacts?.has_docx ||
+    (artifacts?.filename && artifacts.filename.toLowerCase().endsWith('.docx')) ||
+    (artifacts?.docx_filename && artifacts.docx_filename.toLowerCase().endsWith('.docx'))
+  );
+
+  if (isDocxFile) {
     return {
-      filename: artifacts.docx_filename || artifacts.filename || `${safeName}.docx`,
+      filename: detectedDocxFilename || artifacts?.docx_filename || artifacts?.filename || `${safeName}.docx`,
       content: '',
       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       isDocx: true,
-      docxUrl: docxUrl,
-      docxAnswerKeyUrl: artifacts.docx_answer_key_url,
-      docxAnswerKeyFilename: artifacts.docx_answer_key_filename,
-      isPdf: Boolean(artifacts.pdf_url),
-      pdfUrl: artifacts.pdf_url,
-      pdfAnswerKeyUrl: artifacts.pdf_answer_key_url,
-      pdfAnswerKeyFilename: artifacts.pdf_answer_key_filename,
+      docxUrl: detectedDocxUrl,
+      docxAnswerKeyUrl: detectedDocxAnswerKeyUrl,
+      docxAnswerKeyFilename: detectedDocxAnswerKeyFilename,
+      isPdf: Boolean(detectedPdfUrl),
+      pdfUrl: detectedPdfUrl,
+      pdfAnswerKeyUrl: detectedPdfAnswerKeyUrl,
+      pdfAnswerKeyFilename: detectedPdfAnswerKeyFilename,
       extension: 'DOCX',
     };
   }
 
   // 2. Check for PDF document asset
-  if (artifacts?.pdf_url) {
+  if (detectedPdfUrl || artifacts?.pdf_url) {
     return {
-      filename: artifacts.filename || artifacts.pdf_filename || `${safeName}.pdf`,
+      filename: artifacts?.filename || artifacts?.pdf_filename || detectedPdfFilename || `${safeName}.pdf`,
       content: '',
       mimeType: 'application/pdf',
       isPdf: true,
-      pdfUrl: artifacts.pdf_url,
-      pdfAnswerKeyUrl: artifacts.pdf_answer_key_url,
-      pdfAnswerKeyFilename: artifacts.pdf_answer_key_filename,
+      pdfUrl: detectedPdfUrl || artifacts?.pdf_url,
+      pdfAnswerKeyUrl: detectedPdfAnswerKeyUrl || artifacts?.pdf_answer_key_url,
+      pdfAnswerKeyFilename: detectedPdfAnswerKeyFilename || artifacts?.pdf_answer_key_filename,
       extension: 'PDF',
     };
   }
@@ -693,8 +760,13 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                                     <a
                                       href={output.artifacts?.pdf_url || fileInfo.pdfUrl}
                                       target="_blank"
-                                      rel="noreferrer"
-                                      className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        const url = output.artifacts?.pdf_url || fileInfo.pdfUrl;
+                                        if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                                      }}
+                                      className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition cursor-pointer"
                                     >
                                       <span>View PDF</span>
                                       <ExternalLink className="w-3 h-3" />
@@ -738,8 +810,13 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                                   <a
                                     href={output.artifacts?.pdf_url || fileInfo.pdfUrl}
                                     target="_blank"
-                                    rel="noreferrer"
-                                    className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      const url = output.artifacts?.pdf_url || fileInfo.pdfUrl;
+                                      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                                    }}
+                                    className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono cursor-pointer"
                                   >
                                     <span>View PDF</span>
                                     <ExternalLink className="w-3 h-3" />
@@ -1222,8 +1299,13 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                               <a
                                 href={del.artifacts?.pdf_url || fileInfo.pdfUrl}
                                 target="_blank"
-                                rel="noreferrer"
-                                className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
+                                rel="noopener noreferrer"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  const url = del.artifacts?.pdf_url || fileInfo.pdfUrl;
+                                  if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                                }}
+                                className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition cursor-pointer"
                               >
                                 <span>View PDF</span>
                                 <ExternalLink className="w-3 h-3" />
@@ -1267,8 +1349,13 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                             <a
                               href={del.artifacts?.pdf_url || fileInfo.pdfUrl}
                               target="_blank"
-                              rel="noreferrer"
-                              className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono"
+                              rel="noopener noreferrer"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                const url = del.artifacts?.pdf_url || fileInfo.pdfUrl;
+                                if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                              }}
+                              className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono cursor-pointer"
                             >
                               <span>View PDF</span>
                               <ExternalLink className="w-3 h-3" />
