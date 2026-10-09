@@ -67,6 +67,15 @@ class JevFastRouter:
         if domain == DomainType.VISION and not is_vision_task:
             return DomainType.AUDIT
 
+        quiz_triggers = ["quiz", "exam", "test paper", "question paper", "mcq", "multiple choice", "fill-in-the-blank", "answer key", "study guide", "syllabus", "problem set", "assignment questions"]
+        is_quiz_task = any(qt in task_text for qt in quiz_triggers) or any(qt in prompt_text for qt in quiz_triggers)
+        is_software_dev = any(st in (title + " " + desc).lower() for st in [
+            "build app", "create website", "react app", "fastapi app", "terminal game", "cli script", "python script to run", "write a program that"
+        ])
+
+        if is_quiz_task and not is_software_dev:
+            return DomainType.AUDIT
+
         code_triggers = ["python", "script", "program", "api", "html", "css", "javascript", "code", "coding", "software", "backend", "frontend", "algorithm", "developer", "endpoint", "database", "sql"]
         has_code_keywords = any(ct in task_text for ct in code_triggers)
         if domain == DomainType.CODE and not has_code_keywords:
@@ -144,14 +153,21 @@ class JevFastRouter:
             if domain_str == "code":
                 worker_model = self.worker_dispatch_table["code"]
             elif domain_str in ["audit", "general"]:
-                is_answering_step = any(w in task.title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer"])
+                is_answering_step = any(w in task.title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer", "quiz formulation", "quiz generation"])
+                is_word_step = (
+                    (task.expected_output_type or "").lower() in ["word_document", "docx", "doc"]
+                    or "word" in (task.assigned_worker_model or "").lower()
+                    or any(w in task.title.lower() for w in ["word document compilation", "word compilation", "compile word", "microsoft word"])
+                ) and not is_answering_step
                 is_pdf_step = (
                     (task.expected_output_type or "").lower() in ["pdf_document", "pdf_deliverable", "pdf"]
                     or (task.assigned_worker_model or "") == "PDF & Document Publishing Specialist"
                     or any(w in task.title.lower() for w in ["pdf document compilation", "pdf compilation", "compile pdf", "document compilation", "pdf publishing"])
-                ) and not is_answering_step
+                ) and not is_answering_step and not is_word_step
 
-                if is_pdf_step:
+                if is_word_step:
+                    worker_model = "Word & Document Publishing Specialist"
+                elif is_pdf_step:
                     worker_model = "PDF & Document Publishing Specialist"
                 elif "summary" in task.title.lower() or "summariz" in task.description.lower():
                     worker_model = self.worker_dispatch_table["summary"]

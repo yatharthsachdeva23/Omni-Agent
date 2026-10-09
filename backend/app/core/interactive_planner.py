@@ -61,10 +61,15 @@ class InteractivePlannerAgent:
             "1. Deeply understand what the user wants to achieve.\n"
             "2. Formulate a crisp objective summary and architectural approach.\n"
             "3. Decompose into 2 to 4 sequential, concrete implementation steps, assigning specialized models:\n"
-            "   - 'Qwen 2.5 Coder (via Groq Cloud)' for code/web/APIs\n"
-            "   - 'Flux.1 (Visual Asset Specialist)' for images/diagrams\n"
-            "   - 'Gemini 2.0 Flash (Dedicated Reviewer)' for summaries/content\n"
-            "   - 'Mistral (Legal & Formal Logic Specialist)' for math/logic/contracts\n"
+            "   - 'OpenAI GPT (Auditing Specialist)' for quizzes, syllabus questions, exam prep, academic problem sets, research, and analysis (domain: 'audit')\n"
+            "   - 'Word & Document Publishing Specialist' for compiling Word documents (.docx) (domain: 'audit')\n"
+            "   - 'PDF & Document Publishing Specialist' for compiling PDF documents (domain: 'audit')\n"
+            "   - 'Qwen 2.5 Coder (via Groq Cloud)' for code/web/APIs (domain: 'code')\n"
+            "   - 'Flux.1 (Visual Asset Specialist)' for images/diagrams (domain: 'vision')\n"
+            "   - 'Gemini 2.0 Flash (Dedicated Reviewer)' for summaries/content (domain: 'audit')\n"
+            "   - 'Mistral (Legal & Formal Logic Specialist)' for math/logic/contracts (domain: 'math')\n"
+            "CRITICAL QUIZ & ACADEMIC DOCUMENT RULE:\n"
+            "Quizzes, exams, syllabus question papers, and study guides are ALWAYS domain 'audit' assigned to 'OpenAI GPT (Auditing Specialist)', NEVER domain 'code'! If Word (.docx) or PDF export is needed, the final step MUST be 'Word & Document Publishing Specialist' or 'PDF & Document Publishing Specialist' (domain: 'audit').\n"
             "4. Identify 2 to 3 key assumptions.\n"
             "5. Ask 2 to 3 high-impact clarifying questions. Each question MUST provide 2 to 4 crisp, practical multiple-choice options, a recommended default_selected option, and allow custom user answers. Focus on aesthetic/theme, architecture/packaging, or key feature trade-offs.\n\n"
             "Return strictly valid JSON with this exact schema:\n"
@@ -125,6 +130,15 @@ class InteractivePlannerAgent:
         prompt_instruction = (
             "You are the Lead Solutions Architect for OmniTask AI. Formulate an implementation plan and clarifying questions.\n"
             f"User Request: \"{prompt}\"\nAttached Files:\n{files_context}\n\n"
+            "Model lineup:\n"
+            "- 'OpenAI GPT (Auditing Specialist)' for quizzes, syllabus questions, exam prep, academic problem sets, research, and analysis (domain: 'audit')\n"
+            "- 'Word & Document Publishing Specialist' for compiling Word documents (.docx) (domain: 'audit')\n"
+            "- 'PDF & Document Publishing Specialist' for compiling PDF documents (domain: 'audit')\n"
+            "- 'Qwen 2.5 Coder (via Groq Cloud)' for code/web/APIs (domain: 'code')\n"
+            "- 'Flux.1 (Visual Asset Specialist)' for images/diagrams (domain: 'vision')\n"
+            "- 'Gemini 2.0 Flash (Dedicated Reviewer)' for summaries/content (domain: 'audit')\n"
+            "- 'Mistral (Legal & Formal Logic Specialist)' for math/logic/contracts (domain: 'math')\n\n"
+            "CRITICAL: Quizzes, exams, and syllabus questions are ALWAYS domain 'audit' assigned to 'OpenAI GPT (Auditing Specialist)', NEVER 'code'! Final export to Word or PDF must be assigned to the respective Publishing Specialist.\n\n"
             "Return strictly valid JSON conforming to the requested schema with objective_summary, architectural_approach, assumptions, steps, and clarifying_questions."
         )
 
@@ -168,13 +182,42 @@ class InteractivePlannerAgent:
             except ValueError:
                 domain = DomainType.AUDIT
 
+            title = s.get("title", f"Step {idx + 1}")
+            desc = s.get("description", "Execute designated milestone")
+            exp_out = s.get("expected_output", "Executable deliverable")
+            step_text = f"{title} {desc} {exp_out}".lower()
+            p_check = prompt.lower()
+
+            is_quiz = any(w in step_text or w in p_check for w in ["quiz", "test paper", "exam", "question paper", "mcq", "multiple choice", "fill-in-the-blank", "answer key", "syllabus"])
+            is_word = any(w in step_text or w in p_check for w in ["word", "docx", "doc", "microsoft word"])
+            is_pdf = any(w in step_text or w in p_check for w in ["pdf"])
+            is_compiler = any(w in step_text for w in ["compile", "compilation", "publishing", "assemble word", "assemble pdf", "export into word", "export to word", "export to pdf", "document compilation"])
+
+            worker = s.get("assigned_worker", "OpenAI GPT (Auditing Specialist)")
+            if is_quiz and not any(w in step_text for w in ["build app", "create website", "react app", "python script to"]):
+                if is_compiler and is_word:
+                    domain = DomainType.AUDIT
+                    worker = "Word & Document Publishing Specialist"
+                elif is_compiler and is_pdf:
+                    domain = DomainType.AUDIT
+                    worker = "PDF & Document Publishing Specialist"
+                else:
+                    domain = DomainType.AUDIT
+                    worker = "OpenAI GPT (Auditing Specialist)"
+            elif is_compiler and is_word:
+                domain = DomainType.AUDIT
+                worker = "Word & Document Publishing Specialist"
+            elif is_compiler and is_pdf:
+                domain = DomainType.AUDIT
+                worker = "PDF & Document Publishing Specialist"
+
             steps.append(ImplementationStepPlan(
                 step_number=s.get("step_number", idx + 1),
-                title=s.get("title", f"Step {idx + 1}"),
+                title=title,
                 domain=domain,
-                assigned_worker=s.get("assigned_worker", "Qwen 2.5 Coder / Specialist"),
-                description=s.get("description", "Execute designated milestone"),
-                expected_output=s.get("expected_output", "Executable deliverable")
+                assigned_worker=worker,
+                description=desc,
+                expected_output=exp_out
             ))
 
         raw_questions = parsed.get("clarifying_questions", [])
@@ -214,6 +257,9 @@ class InteractivePlannerAgent:
         clarifying questions to the specific intent of the prompt without hardcoding.
         """
         p_lower = prompt.lower()
+        is_quiz = any(w in p_lower for w in ["quiz", "test", "exam", "question", "questions and answer", "syllabus", "test paper", "study guide"])
+        is_word = any(w in p_lower for w in ["word", "docx", "doc", "microsoft word", "in word", "as word"])
+        is_pdf = any(w in p_lower for w in ["pdf", "in a pdf", "to pdf", "as pdf"])
         is_web = any(w in p_lower for w in ["html", "css", "website", "landing page", "portfolio", "frontend", "ui", "web page", "browser"])
         is_python = any(w in p_lower for w in ["python", "script", "backend", "api", "fastapi", "microservice", "daemon", "server"])
         is_math_fin = any(w in p_lower for w in ["math", "calculate", "risk", "sales", "finance", "algorithm", "statistics", "volatility", "equation"])
@@ -223,7 +269,51 @@ class InteractivePlannerAgent:
         questions: List[PlanClarifyingQuestion] = []
         assumptions: List[str] = []
 
-        if is_web:
+        if is_quiz or is_word or is_pdf:
+            format_name = "Microsoft Word (.docx)" if is_word else ("PDF Document" if is_pdf else "Publication Document")
+            obj_summary = f"Synthesize syllabus-aligned quiz/study material and compile publication-ready {format_name} for: {prompt[:80]}"
+            arch_approach = f"Two-stage pipeline: Subject-matter question formulation by OpenAI GPT Auditing Specialist followed by document compilation by {('Word' if is_word else 'PDF')} Publishing Specialist."
+            assumptions = [
+                "Questions will be extracted and derived directly from the provided syllabus or topic specifications.",
+                f"Deliverable will include clean formatting and native export to {format_name}."
+            ]
+            steps.append(ImplementationStepPlan(
+                step_number=1,
+                title="In-Depth Quiz & Solution Formulation from Syllabus",
+                domain=DomainType.AUDIT,
+                assigned_worker="OpenAI GPT (Auditing Specialist)",
+                description="Synthesize high-difficulty exam questions, multiple choice options with plausible distractors, application problems, and a comprehensive answer key with deep technical explanations.",
+                expected_output="Verified Markdown Content with Question Formats and Answer Key"
+            ))
+            steps.append(ImplementationStepPlan(
+                step_number=2,
+                title=f"Publication-Grade {format_name} Compilation",
+                domain=DomainType.AUDIT,
+                assigned_worker="Word & Document Publishing Specialist" if is_word else "PDF & Document Publishing Specialist",
+                description=f"Compile and format verified questions, choices, and solutions into a publication-grade {format_name} file ready for download.",
+                expected_output=f"Downloadable {format_name} File"
+            ))
+            questions.append(PlanClarifyingQuestion(
+                id="q_answer_placement",
+                question="Where should the answers and technical solutions be positioned?",
+                options=[
+                    "Separate Comprehensive Answer Key at End (Recommended for test papers)",
+                    "Inline Explanations Directly After Each Question (Ideal for study guides)"
+                ],
+                default_selected="Separate Comprehensive Answer Key at End (Recommended for test papers)"
+            ))
+            questions.append(PlanClarifyingQuestion(
+                id="q_question_distribution",
+                question="What question type distribution would you like?",
+                options=[
+                    "Balanced Mix: MCQs, Fill-in-the-blanks & Applied Scenarios (Recommended)",
+                    "Strictly Multiple Choice Questions (MCQs with 4 options)",
+                    "Comprehensive Analytical, Conceptual & Code Analysis Problems"
+                ],
+                default_selected="Balanced Mix: MCQs, Fill-in-the-blanks & Applied Scenarios (Recommended)"
+            ))
+
+        elif is_web:
             obj_summary = f"Develop complete, responsive web interface for: {prompt[:80]}"
             arch_approach = "Single-file standalone HTML5 architecture with inline CSS styling and embedded vanilla JavaScript interactions."
             assumptions = [

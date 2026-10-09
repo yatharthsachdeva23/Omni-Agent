@@ -114,8 +114,16 @@ class WorkerPool:
             or any(w in task.title.lower() for w in ["pdf document compilation", "pdf compilation", "compile pdf", "document compilation", "pdf publishing", "word document compilation", "word compilation", "compile word", "word document"])
         ) and not is_answering_step
 
+        is_quiz_task = any(w in (task.title + " " + task.description).lower() for w in [
+            "quiz", "test paper", "exam", "question paper", "mcq", "multiple choice", "fill-in-the-blank", "answer key", "syllabus"
+        ]) and not any(w in (task.title + " " + task.description).lower() for w in [
+            "build app", "create website", "react app", "fastapi app", "terminal game", "cli script", "python script to run"
+        ])
+
         if is_document_specialist:
             result = await self._run_pdf_compiler(task, objective, prior_outputs, cumulative_handovers, override_prompt)
+        elif is_quiz_task:
+            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
         elif is_creative_writing:
             result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
         elif domain == DomainType.CODE or "qwen" in assigned_model.lower():
@@ -169,6 +177,35 @@ class WorkerPool:
                 except Exception as auto_pdf_err:
                     print(f"[WorkerPool] Auto-PDF compilation notice: {auto_pdf_err}")
 
+        # Auto-compile Word hook: If user objective asked for Word document, ensure a real .docx artifact is attached
+        wants_word = any(w in objective.lower() for w in ["word", "docx", ".docx", "microsoft word", "in word", "as word", "word document"])
+        if wants_word and not result.artifacts.get("docx_url") and result.output_text and len(result.output_text.strip()) > 80:
+            is_dedicated_word_step = (
+                "word & document publishing specialist" in assigned_model.lower()
+                or "word" in assigned_model.lower()
+                or task.expected_output_type in ["word_document", "docx", "doc"]
+            )
+            has_subsequent_word_step = any(
+                "word" in str(getattr(st, "assigned_worker_model", "")).lower() or
+                getattr(st, "expected_output_type", "") in ["word_document", "docx", "doc"]
+                for st in blackboard_context.get("all_tasks", [])
+            ) if "all_tasks" in blackboard_context else False
+
+            if not is_dedicated_word_step and not has_subsequent_word_step:
+                try:
+                    from app.utils.docx_generator import markdown_to_docx
+                    doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
+                    clean_for_docx = sanitize_display_output(result.output_text)
+                    docx_url, docx_path = markdown_to_docx(clean_for_docx, title=doc_title)
+                    result.artifacts["docx_url"] = docx_url
+                    result.artifacts["download_url"] = docx_url
+                    result.artifacts["local_docx_path"] = str(docx_path)
+                    result.artifacts["docx_filename"] = docx_path.name
+                    result.artifacts["has_docx"] = True
+                    result.artifacts["docx_size_bytes"] = docx_path.stat().st_size
+                except Exception as auto_docx_err:
+                    print(f"[WorkerPool] Auto-Word compilation notice: {auto_docx_err}")
+
         # Universal Dual-Channel Output Separation & Inter-Agent Handover Extraction
         clean_user_deliverable, handover = extract_and_sanitize_handover(
             result.output_text,
@@ -198,6 +235,7 @@ class WorkerPool:
             "Deliver clean, production-grade, functional code matching the exact domain and language requested:\n"
             "MULTI-AGENT CONTINUITY DIRECTIVE:\n"
             "If preceding stage deliverables or handovers exist on the Common Context Blackboard, maintain 100% architectural and logical continuity with them.\n"
+            "- STRICT PROHIBITION ON HTML BOILERPLATE: NEVER output HTML templates, <!DOCTYPE html>, <html>, or CSS styles unless the user explicitly requested a website, landing page, frontend UI component, or browser mockup! For quizzes, tests, question papers, academic content, or documentation, NEVER output HTML or web code—deliver clean, structured Markdown.\n"
             "- For frontend web tasks, UI replicas, or landing pages: output complete, standalone, self-contained HTML5 deliverables. ALWAYS embed all CSS styles directly inside <style>...</style> tags in the <head> and all interactive JavaScript inside <script>...</script> tags before </body>. NEVER link to external local files like href='styles.css' or src='script.js' that do not exist on the user's computer, so the downloaded HTML file renders beautifully and works completely on its own when double-clicked. NEVER wrap frontend web code inside an unnecessary Python script unless explicitly requested.\n"
             "- For backend services, scripts, or algorithms: write clean, typed, modular code (e.g. Python, TypeScript, Go, etc.) as requested.\n"
             "- For database tasks: output clean ANSI SQL.\n"

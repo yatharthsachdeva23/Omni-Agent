@@ -248,6 +248,16 @@ class JSONStructurerAgent:
         if domain == DomainType.VISION and not is_vision_task:
             return DomainType.AUDIT
 
+        quiz_triggers = ["quiz", "exam", "test paper", "question paper", "mcq", "multiple choice", "fill-in-the-blank", "answer key", "study guide", "syllabus", "problem set", "assignment questions"]
+        is_quiz_task = any(qt in task_text for qt in quiz_triggers) or any(qt in prompt_text for qt in quiz_triggers)
+        is_software_dev = any(st in (title + " " + desc).lower() for st in [
+            "build app", "create website", "react app", "fastapi app", "terminal game", "cli script", "python script to run", "write a program that"
+        ])
+
+        # Academic quizzes, syllabus tests, and exams are ALWAYS AUDIT domain (never CODE, VISION, AUDIO, or VIDEO)
+        if is_quiz_task and not is_software_dev:
+            return DomainType.AUDIT
+
         code_triggers = ["python", "script", "program", "api", "html", "css", "javascript", "code", "coding", "software", "backend", "frontend", "algorithm", "developer", "endpoint", "database", "sql"]
         has_code_keywords = any(ct in task_text for ct in code_triggers)
         if domain == DomainType.CODE and not has_code_keywords:
@@ -297,7 +307,8 @@ class JSONStructurerAgent:
             # Assign specialized worker model aligned with normalized domain
             worker_candidate = t.get("assigned_worker_model", "")
             if domain == DomainType.AUDIT:
-                is_answering_step = any(w in title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer"])
+                is_answering_step = any(w in title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer", "quiz formulation", "quiz generation"])
+                is_quiz_step = any(w in (title + " " + desc).lower() for w in ["quiz", "test paper", "exam", "question paper", "mcq", "multiple choice", "fill-in-the-blank", "answer key", "syllabus"])
                 is_doc_compile = (
                     out_type.lower() in ["pdf_document", "pdf_deliverable", "pdf", "word_document", "docx", "doc"]
                     or "document publishing specialist" in worker_candidate.lower()
@@ -308,11 +319,13 @@ class JSONStructurerAgent:
                         "document compilation", "pdf publishing", "word document compilation",
                         "word compilation", "compile word", "word document"
                     ])
-                ) and not is_answering_step
+                ) and not is_answering_step and not (is_quiz_step and out_type.lower() not in ["word_document", "pdf_document", "docx", "pdf"])
 
                 if is_doc_compile:
                     is_word = any(w in (title + " " + desc + " " + out_type + " " + prompt).lower() for w in ["word", "docx", "doc", "microsoft word"])
                     worker = "Word & Document Publishing Specialist" if is_word else "PDF & Document Publishing Specialist"
+                elif is_quiz_step:
+                    worker = "OpenAI GPT (Auditing Specialist)"
                 elif any(w in desc.lower() or w in title.lower() for w in ["summariz", "summary"]):
                     worker = "Gemini 2.0 Flash (Summarizer Specialist)"
                 elif any(w in desc.lower() or w in title.lower() for w in ["compar", "tradeoff", "differ", "suitability", "profile"]):
@@ -354,9 +367,15 @@ class JSONStructurerAgent:
         is_quiz_task = any(w in p_check for w in ["quiz", "test paper", "exam", "assignment", "problem set"])
 
         has_compiler = any(
-            t.expected_output_type in ["word_document", "pdf_document", "docx", "pdf"] or
-            "publishing specialist" in t.assigned_worker_model.lower() or
-            any(w in t.title.lower() for w in ["compilation", "compile", "publishing"])
+            (
+                t.expected_output_type in ["word_document", "pdf_document", "docx", "pdf"] or
+                "publishing specialist" in t.assigned_worker_model.lower() or
+                "word & document" in t.assigned_worker_model.lower() or
+                "pdf & document" in t.assigned_worker_model.lower()
+            ) and any(w in (t.title + " " + t.description).lower() for w in [
+                "compilation", "compile", "publishing", "word document compilation", "pdf document compilation",
+                "format and compile", "publish"
+            ])
             for t in sub_tasks
         )
 
