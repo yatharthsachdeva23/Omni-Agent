@@ -803,18 +803,24 @@ if __name__ == "__main__":
             docx_kb = round(docx_path.stat().st_size / 1024, 1)
 
             # Also compile a PDF version for convenience
-            pdf_url, pdf_path = markdown_to_pdf(compiled_content, title=doc_title)
-            pdf_kb = round(pdf_path.stat().st_size / 1024, 1)
+            pdf_url, pdf_path = None, None
+            try:
+                pdf_url, pdf_path = markdown_to_pdf(compiled_content, title=doc_title)
+            except Exception as pdf_err:
+                print(f"[Word Specialist] Companion PDF notice: {pdf_err}")
+            pdf_kb = round(pdf_path.stat().st_size / 1024, 1) if pdf_path and pdf_path.exists() else 0
 
+            pdf_line = f"- **PDF Companion**: `{pdf_path.name}` ({pdf_kb} KB)\n" if pdf_url and pdf_path else ""
+            pdf_dl = f"📥 **Download PDF Companion**: [Download {pdf_path.name}]({pdf_url})\n\n" if pdf_url and pdf_path else ""
             output_md = (
                 f"### 📄 Publication-Grade Microsoft Word Document (.docx) Compiled\n\n"
                 f"The verified solutions have been formatted and compiled into a native Microsoft Word document (.docx) as requested.\n\n"
                 f"- **Document Title**: {doc_title}\n"
                 f"- **Word File (.docx)**: `{docx_path.name}` ({docx_kb} KB)\n"
-                f"- **PDF Companion**: `{pdf_path.name}` ({pdf_kb} KB)\n"
+                f"{pdf_line}"
                 f"- **Formatting Engine**: python-docx OpenXML + ReportLab Canvas\n\n"
                 f"📥 **Download Microsoft Word Document**: [Download {docx_path.name}]({docx_url})\n\n"
-                f"📥 **Download PDF Companion**: [Download {pdf_path.name}]({pdf_url})\n"
+                f"{pdf_dl}"
             )
 
             return WorkerResult(

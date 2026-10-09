@@ -66,36 +66,60 @@ class NumberedCanvas(canvas.Canvas):
 def clean_markdown_for_reportlab(text: str) -> str:
     """
     Sanitizes markdown tags into ReportLab compatible XML tags.
-    Strips raw markdown syntax (such as leftover ####, LaTeX wraps, etc.)
+    Protects fill-in-the-blank underscores and strips raw markdown syntax.
     """
     # Strip any leading markdown header hashes if left over in paragraph
     text = re.sub(r"^#{1,6}\s*", "", text.strip())
 
+    # Protect fill-in-the-blank underscores (e.g. ____, ______, etc.)
+    blanks = []
+    def save_blank(m):
+        blanks.append(m.group(0))
+        return f"@@@BLANK_{len(blanks)-1}@@@"
+    
+    text = re.sub(r"_{2,}", save_blank, text)
+
     # Clean LaTeX inline/display wraps
     text = text.replace(r"\(", "").replace(r"\)", "").replace(r"\[", "").replace(r"\]", "")
-    # Clean common LaTeX math operators
-    text = re.sub(r"\\mathbf\{([^}]+)\}", r"<b>\1</b>", text)
-    text = re.sub(r"\\mathcal\{([^}]+)\}", r"\1", text)
-    text = re.sub(r"\\text\{([^}]+)\}", r"\1", text)
     text = text.replace(r"\det", "det").replace(r"\sim", "~").replace(r"\odot", "⊙")
     text = text.replace(r"\partial", "∂").replace(r"\frac", "")
 
     # Escape XML entities first
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    # Re-enable basic tags
-    # Bold: **bold** or __bold__
-    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
-    text = re.sub(r"__(.+?)__", r"<b>\1</b>", text)
+    # Re-enable LaTeX math formatting
+    text = re.sub(r"\\mathbf\{([^}]+)\}", r"<b>\1</b>", text)
+    text = re.sub(r"\\mathcal\{([^}]+)\}", r"\1", text)
+    text = re.sub(r"\\text\{([^}]+)\}", r"\1", text)
 
-    # Italics: *italic* or _italic_
-    text = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<i>\1</i>", text)
-    text = re.sub(r"(?<!_)_(?!_)(.+?)(?<!_)_(?!_)", r"<i>\1</i>", text)
+    # Re-enable basic tags
+    # Bold: **bold**
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+
+    # Italics: *italic* (only when surrounded by non-asterisks)
+    text = re.sub(r"(?<!\*)\*(?!\*)([^\*]+?)(?<!\*)\*(?!\*)", r"<i>\1</i>", text)
 
     # Inline code: `code`
-    text = re.sub(r"`(.+?)`", r'<font face="Courier" color="#0f172a" backcolor="#f1f5f9"> \1 </font>', text)
+    text = re.sub(r"`([^`]+?)`", r'<font face="Courier" color="#0f172a" backcolor="#f1f5f9"> \1 </font>', text)
+
+    # Restore blanks safely as clean underscores
+    for idx, b in enumerate(blanks):
+        text = text.replace(f"@@@BLANK_{idx}@@@", "_" * len(b))
 
     return text
+
+
+def safe_paragraph(html_text: str, style) -> Paragraph:
+    """
+    Safely creates a ReportLab Paragraph. If ReportLab XML parser encounters
+    any malformed tag sequence (e.g. unclosed tags), falls back to plain escaped text.
+    """
+    try:
+        return Paragraph(html_text, style)
+    except Exception:
+        clean = re.sub(r"<[^>]+>", "", html_text)
+        clean = clean.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return Paragraph(clean, style)
 
 
 def markdown_to_pdf(
@@ -319,13 +343,13 @@ def markdown_to_pdf(
             heading_content = h_match.group(2).strip()
             clean_text = clean_markdown_for_reportlab(heading_content)
             if level == 1:
-                flowables.append(Paragraph(clean_text, h1_style))
+                flowables.append(safe_paragraph(clean_text, h1_style))
             elif level == 2:
-                flowables.append(Paragraph(clean_text, h2_style))
+                flowables.append(safe_paragraph(clean_text, h2_style))
             elif level == 3:
-                flowables.append(Paragraph(clean_text, h3_style))
+                flowables.append(safe_paragraph(clean_text, h3_style))
             else:
-                flowables.append(Paragraph(clean_text, h4_style))
+                flowables.append(safe_paragraph(clean_text, h4_style))
             i += 1
             continue
 
@@ -333,7 +357,7 @@ def markdown_to_pdf(
         if stripped.startswith(("- ", "* ", "+ ")):
             clean_text = clean_markdown_for_reportlab(stripped[2:])
             bullet_html = f"&bull;&nbsp;&nbsp;{clean_text}"
-            flowables.append(Paragraph(bullet_html, bullet_style))
+            flowables.append(safe_paragraph(bullet_html, bullet_style))
             i += 1
             continue
 
@@ -343,17 +367,28 @@ def markdown_to_pdf(
             num_prefix = num_match.group(1)
             clean_text = clean_markdown_for_reportlab(num_match.group(2))
             item_html = f"<b>{num_prefix}</b>&nbsp;&nbsp;{clean_text}"
-            flowables.append(Paragraph(item_html, bullet_style))
+            flowables.append(safe_paragraph(item_html, bullet_style))
             i += 1
             continue
 
         # Standard paragraph
         clean_text = clean_markdown_for_reportlab(stripped)
-        flowables.append(Paragraph(clean_text, body_style))
+        flowables.append(safe_paragraph(clean_text, body_style))
         i += 1
 
-    # Build the PDF using NumberedCanvas
-    doc.build(flowables, canvasmaker=NumberedCanvas)
+    # Build the PDF using NumberedCanvas with recovery fallback
+    try:
+        doc.build(flowables, canvasmaker=NumberedCanvas)
+    except Exception as build_err:
+        print(f"[PDF Generator] NumberedCanvas build notice: {build_err}. Falling back to plain flowables.")
+        clean_flowables = []
+        for f in flowables:
+            if isinstance(f, Paragraph):
+                raw_txt = re.sub(r"<[^>]+>", "", f.text)
+                clean_flowables.append(safe_paragraph(raw_txt, f.style))
+            else:
+                clean_flowables.append(f)
+        doc.build(clean_flowables)
 
     pdf_url = f"/api/generated-media/{output_filename}"
     return pdf_url, file_path
