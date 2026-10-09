@@ -1,8 +1,9 @@
 import time
 import re
+import uuid
 import urllib.parse
 import httpx
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from app.models.schemas import (
     DomainType,
     WorkerResult,
@@ -10,6 +11,94 @@ from app.models.schemas import (
 )
 from app.config import config
 from app.utils.handover_extractor import extract_and_sanitize_handover
+
+def clean_delimiter_markers(text: str) -> str:
+    """Strips internal document boundary lines like '=== DOCUMENT 1: ... ==='."""
+    if not text:
+        return ""
+    lines = text.split("\n")
+    cleaned = []
+    for l in lines:
+        if re.match(r'^\s*={2,}\s*(?:DOCUMENT\s*\d+|SEPARATE\s+ANSWER\s+KEY|QUIZ\s+QUESTIONS|PART\s*\d+)\s*[:\-–—]?.*={2,}\s*$', l, re.IGNORECASE):
+            continue
+        cleaned.append(l)
+    return "\n".join(cleaned).strip()
+
+def split_quiz_and_answer_key(content: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Splits content into (questions_doc, answer_key_doc) if a clear separate answer key delimiter exists.
+    Returns (doc1, doc2) or (None, None).
+    """
+    if not content:
+        return None, None
+
+    # Pattern 1: === DOCUMENT 1 ... === and === DOCUMENT 2 ... ===
+    m_doc2 = re.search(r'={2,}\s*DOCUMENT\s*2\s*[:\-–—]?\s*(.*?)\s*={2,}', content, re.IGNORECASE)
+    if m_doc2:
+        split_idx = m_doc2.start()
+        doc1_raw = content[:split_idx].strip()
+        doc2_raw = content[split_idx:].strip()
+        doc1 = clean_delimiter_markers(doc1_raw)
+        doc2 = clean_delimiter_markers(doc2_raw)
+        if len(doc1) > 50 and len(doc2) > 50:
+            return doc1, doc2
+
+    # Pattern 2: Explicit === SEPARATE ANSWER KEY === or === ANSWER KEY ===
+    m_sep = re.search(r'={2,}\s*(?:SEPARATE\s+)?ANSWER\s+KEY\s*={2,}', content, re.IGNORECASE)
+    if m_sep:
+        split_idx = m_sep.start()
+        doc1_raw = content[:split_idx].strip()
+        doc2_raw = content[split_idx:].strip()
+        doc1 = clean_delimiter_markers(doc1_raw)
+        doc2 = clean_delimiter_markers(doc2_raw)
+        if len(doc1) > 50 and len(doc2) > 50:
+            return doc1, doc2
+
+    # Pattern 3: Heading '# ... Answer Key' or '## ... Answer Key'
+    m_h_ans = re.search(r'\n(?=#{1,3}\s+(?:[A-Za-z0-9_\-:\s]+)?(?:Answer\s+Key|Solutions\s+and\s+Answer\s+Key|Solutions\s+Key|Solutions\s+&\s+Explanations))', content, re.IGNORECASE)
+    if m_h_ans:
+        split_idx = m_h_ans.start()
+        doc1 = clean_delimiter_markers(content[:split_idx].strip())
+        doc2 = clean_delimiter_markers(content[split_idx:].strip())
+        if len(doc1) > 80 and len(doc2) > 80:
+            return doc1, doc2
+
+    return None, None
+
+def derive_clean_doc_titles(task_title: str, objective: str, content: str) -> Tuple[str, str, str, str]:
+    """
+    Derives clean user-facing titles and filename bases for (questions_doc, answer_key_doc).
+    Returns (title_q, filename_base_q, title_ak, filename_base_ak).
+    """
+    m_course = re.search(r'\b([A-Z]{2,4}\s*\d{3,4})\b', (objective + " " + content)[:500], re.IGNORECASE)
+    course_str = f"{m_course.group(1).upper()}: " if m_course else ""
+
+    m_h1 = re.search(r'^\s*#\s+(.+)$', content, re.MULTILINE)
+    h1_text = ""
+    if m_h1:
+        h1_text = re.sub(r'[*_`]', '', m_h1.group(1)).strip()
+        h1_text = re.sub(r'(?:—\s*Answer\s*Key.*|:\s*Answer\s*Key.*)$', '', h1_text, flags=re.IGNORECASE).strip()
+
+    if h1_text and not any(b in h1_text.lower() for b in ["omnitask", "deliverable", "compilation"]):
+        base_name = h1_text
+    elif "quiz" in objective.lower():
+        topic = re.sub(r'(?:create|make|generate|give|write|prepare)\s+(?:a\s+|an\s+)?quiz\s+(?:on|for|about)?\s*', '', objective, flags=re.IGNORECASE).strip()
+        topic = re.sub(r'\s+(?:in|as|with)\s+.*$', '', topic, flags=re.IGNORECASE).strip()
+        if topic and len(topic) < 50:
+            base_name = f"{course_str}{topic.title()} Quiz"
+        else:
+            base_name = f"{course_str}Generative AI Quiz" if "generative ai" in objective.lower() else f"{course_str}Comprehensive Quiz"
+    else:
+        base_name = f"{course_str}Document Deliverable"
+
+    title_q = f"{base_name} (Questions)" if not base_name.lower().endswith("questions") else base_name
+    title_ak = f"{base_name} (Answer Key & Solutions)"
+    
+    clean_base_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', base_name).strip('_')[:35]
+    fn_q = f"{clean_base_slug}_Questions"
+    fn_ak = f"{clean_base_slug}_Answer_Key"
+
+    return title_q, fn_q, title_ak, fn_ak
 
 def sanitize_display_output(text: str) -> str:
     """Helper to sanitize output and strip internal coordination tags for clean document compilation."""
@@ -166,14 +255,30 @@ class WorkerPool:
             if not is_dedicated_pdf_step and not has_subsequent_pdf_step:
                 try:
                     from app.utils.pdf_generator import markdown_to_pdf
-                    doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
                     clean_for_pdf = sanitize_display_output(result.output_text)
-                    pdf_url, pdf_path = markdown_to_pdf(clean_for_pdf, title=doc_title)
-                    result.artifacts["pdf_url"] = pdf_url
-                    result.artifacts["local_path"] = str(pdf_path)
-                    result.artifacts["filename"] = pdf_path.name
-                    result.artifacts["has_pdf"] = True
-                    result.artifacts["file_size_bytes"] = pdf_path.stat().st_size
+                    doc1, doc2 = split_quiz_and_answer_key(clean_for_pdf)
+                    if doc1 and doc2:
+                        title_q, fn_q, title_ak, fn_ak = derive_clean_doc_titles(task.title, objective, clean_for_pdf)
+                        uid = uuid.uuid4().hex[:6]
+                        pdf1_url, pdf1_path = markdown_to_pdf(doc1, title=title_q, output_filename=f"{fn_q}_{uid}.pdf")
+                        pdf2_url, pdf2_path = markdown_to_pdf(doc2, title=title_ak, output_filename=f"{fn_ak}_{uid}.pdf")
+                        result.artifacts["pdf_url"] = pdf1_url
+                        result.artifacts["local_path"] = str(pdf1_path)
+                        result.artifacts["filename"] = pdf1_path.name
+                        result.artifacts["pdf_filename"] = pdf1_path.name
+                        result.artifacts["pdf_answer_key_url"] = pdf2_url
+                        result.artifacts["pdf_answer_key_filename"] = pdf2_path.name
+                        result.artifacts["has_pdf"] = True
+                        result.artifacts["has_separate_answer_key"] = True
+                        result.artifacts["file_size_bytes"] = pdf1_path.stat().st_size
+                    else:
+                        doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
+                        pdf_url, pdf_path = markdown_to_pdf(clean_for_pdf, title=doc_title)
+                        result.artifacts["pdf_url"] = pdf_url
+                        result.artifacts["local_path"] = str(pdf_path)
+                        result.artifacts["filename"] = pdf_path.name
+                        result.artifacts["has_pdf"] = True
+                        result.artifacts["file_size_bytes"] = pdf_path.stat().st_size
                 except Exception as auto_pdf_err:
                     print(f"[WorkerPool] Auto-PDF compilation notice: {auto_pdf_err}")
 
@@ -194,15 +299,31 @@ class WorkerPool:
             if not is_dedicated_word_step and not has_subsequent_word_step:
                 try:
                     from app.utils.docx_generator import markdown_to_docx
-                    doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
                     clean_for_docx = sanitize_display_output(result.output_text)
-                    docx_url, docx_path = markdown_to_docx(clean_for_docx, title=doc_title)
-                    result.artifacts["docx_url"] = docx_url
-                    result.artifacts["download_url"] = docx_url
-                    result.artifacts["local_docx_path"] = str(docx_path)
-                    result.artifacts["docx_filename"] = docx_path.name
-                    result.artifacts["has_docx"] = True
-                    result.artifacts["docx_size_bytes"] = docx_path.stat().st_size
+                    doc1, doc2 = split_quiz_and_answer_key(clean_for_docx)
+                    if doc1 and doc2:
+                        title_q, fn_q, title_ak, fn_ak = derive_clean_doc_titles(task.title, objective, clean_for_docx)
+                        uid = uuid.uuid4().hex[:6]
+                        docx1_url, docx1_path = markdown_to_docx(doc1, title=title_q, output_filename=f"{fn_q}_{uid}.docx")
+                        docx2_url, docx2_path = markdown_to_docx(doc2, title=title_ak, output_filename=f"{fn_ak}_{uid}.docx")
+                        result.artifacts["docx_url"] = docx1_url
+                        result.artifacts["download_url"] = docx1_url
+                        result.artifacts["local_docx_path"] = str(docx1_path)
+                        result.artifacts["docx_filename"] = docx1_path.name
+                        result.artifacts["docx_answer_key_url"] = docx2_url
+                        result.artifacts["docx_answer_key_filename"] = docx2_path.name
+                        result.artifacts["has_docx"] = True
+                        result.artifacts["has_separate_answer_key"] = True
+                        result.artifacts["docx_size_bytes"] = docx1_path.stat().st_size
+                    else:
+                        doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
+                        docx_url, docx_path = markdown_to_docx(clean_for_docx, title=doc_title)
+                        result.artifacts["docx_url"] = docx_url
+                        result.artifacts["download_url"] = docx_url
+                        result.artifacts["local_docx_path"] = str(docx_path)
+                        result.artifacts["docx_filename"] = docx_path.name
+                        result.artifacts["has_docx"] = True
+                        result.artifacts["docx_size_bytes"] = docx_path.stat().st_size
                 except Exception as auto_docx_err:
                     print(f"[WorkerPool] Auto-Word compilation notice: {auto_docx_err}")
 
@@ -577,11 +698,34 @@ if __name__ == "__main__":
                 "- The rest of your deliverable must contain strictly the riddle, clues, and pointers, keeping the user in full suspense!"
             )
 
+        wants_separate_file = any(w in (objective + " " + task.description + " " + task.title).lower() for w in [
+            "separate file", "seperate file", "separate document", "seperate document",
+            "separate doc", "seperate doc", "separate answer key", "seperate answer key",
+            "answer key in separate", "answer key in seperate", "answers in separate",
+            "answers in seperate", "answer key separate", "answer key seperate"
+        ])
+        separate_file_rule = ""
+        if wants_separate_file:
+            separate_file_rule = (
+                "\n\nCRITICAL SEPARATE DELIVERABLES DIRECTIVE (SEPARATE QUIZ & ANSWER KEY):\n"
+                "- The user EXPLICITLY requested the quiz and answer key in SEPARATE files/documents.\n"
+                "- Under NO circumstances should you reveal answers, solutions, or answer hints directly under the questions!\n"
+                "- You MUST structure your entire deliverable into EXACTLY TWO independent documents separated by these EXACT delimiter lines:\n\n"
+                "=== DOCUMENT 1: QUIZ QUESTIONS ===\n"
+                "# IT429: Generative AI Quiz\n"
+                "(Include all instructions, multiple choice questions with options A, B, C, D, and fill-in-the-blank questions here. DO NOT include any answers, answer letters, or hints in Document 1!)\n\n"
+                "=== DOCUMENT 2: SEPARATE ANSWER KEY ===\n"
+                "# IT429: Generative AI Quiz — Answer Key & Solutions\n"
+                "(Include the full answer key, correct option letters, full code implementations, and detailed technical explanations for every question from Document 1 here!)\n\n"
+                "- Strictly obey this separation so that our document publishing engine can compile two separate Microsoft Word (.docx) files for the user!\n"
+                "- NEVER write 'Prepared by OmniTask AI' or artificial branding in either document."
+            )
+
         prompt_text = (
             f"You are the Gemini Summarizer & Creative Specialist for OmniTask AI.\n"
             f"Task: {task.title}\nObjective: {objective}{override_note}\n"
             f"{prior_context}\n"
-            f"{attached_files_text}{secrecy_rule}\n\n"
+            f"{attached_files_text}{secrecy_rule}{separate_file_rule}\n\n"
             "MULTI-AGENT COLLABORATION DIRECTIVE:\n"
             "Build directly upon verified deliverables and handovers established on the Common Context Blackboard above.\n"
             "COLLABORATIVE DUAL-CHANNEL PROTOCOL:\n"
@@ -769,8 +913,10 @@ if __name__ == "__main__":
         """
         Specialist worker that compiles verified markdown solutions/content
         from the blackboard into publication-grade Word (.docx) and/or PDF documents.
+        Supports dual-file compilation when separate quiz and answer key files are requested.
         """
         from app.utils.pdf_generator import markdown_to_pdf
+        from app.utils.docx_generator import markdown_to_docx
 
         # Aggregate content to compile into document from prior outputs
         content_parts = []
@@ -785,20 +931,143 @@ if __name__ == "__main__":
 
         compiled_content = "\n\n".join(content_parts)
         if not compiled_content:
-            compiled_content = f"# {task.title}\n\nComprehensive Deliverable prepared for: {objective}\n\nCompiled by OmniTask Multi-Agent Swarm."
+            compiled_content = f"# {task.title}\n\nComprehensive Deliverable prepared for: {objective}"
 
+        is_word_requested = any(w in (task.title + " " + task.description + " " + objective).lower() for w in [
+            "word doc", "word document", "docx", ".docx", "microsoft word", "word format", "in word", "as word"
+        ])
+
+        # Check if user requested separate files (Quiz questions in one file, Answer key in another)
+        wants_separate = any(w in (objective + " " + task.description + " " + task.title).lower() for w in [
+            "separate file", "seperate file", "separate document", "seperate document",
+            "separate doc", "seperate doc", "separate answer key", "seperate answer key",
+            "answer key in separate", "answer key in seperate", "answers in separate",
+            "answers in seperate", "answer key separate", "answer key seperate"
+        ])
+
+        doc1_content, doc2_content = split_quiz_and_answer_key(compiled_content)
+        if wants_separate and not (doc1_content and doc2_content):
+            # Attempt heading split for "Answer Key"
+            m_h = re.search(r'\n(?=#{1,3}\s+(?:[A-Za-z0-9_\-:\s]+)?(?:Answer\s+Key|Solutions\s+and\s+Answer\s+Key|Solutions\s+Key|Solutions\s+&\s+Explanations))', compiled_content, re.IGNORECASE)
+            if m_h:
+                d1 = clean_delimiter_markers(compiled_content[:m_h.start()].strip())
+                d2 = clean_delimiter_markers(compiled_content[m_h.start():].strip())
+                if len(d1) > 80 and len(d2) > 80:
+                    doc1_content, doc2_content = d1, d2
+
+        # ----------------------------------------------------
+        # CASE A: DUAL-FILE DELIVERABLE (QUIZ + SEPARATE ANSWER KEY)
+        # ----------------------------------------------------
+        if doc1_content and doc2_content:
+            title_q, fn_q, title_ak, fn_ak = derive_clean_doc_titles(task.title, objective, compiled_content)
+            uid = uuid.uuid4().hex[:6]
+
+            if is_word_requested:
+                docx1_url, docx1_path = markdown_to_docx(doc1_content, title=title_q, output_filename=f"{fn_q}_{uid}.docx")
+                docx2_url, docx2_path = markdown_to_docx(doc2_content, title=title_ak, output_filename=f"{fn_ak}_{uid}.docx")
+                docx1_kb = round(docx1_path.stat().st_size / 1024, 1)
+                docx2_kb = round(docx2_path.stat().st_size / 1024, 1)
+
+                # Optional companion PDFs
+                pdf1_url, pdf1_path, pdf2_url, pdf2_path = None, None, None, None
+                try:
+                    pdf1_url, pdf1_path = markdown_to_pdf(doc1_content, title=title_q, output_filename=f"{fn_q}_{uid}.pdf")
+                    pdf2_url, pdf2_path = markdown_to_pdf(doc2_content, title=title_ak, output_filename=f"{fn_ak}_{uid}.pdf")
+                except Exception as p_err:
+                    print(f"[Word Specialist] Dual PDF companion notice: {p_err}")
+
+                pdf_companions_md = ""
+                if pdf1_url and pdf2_url:
+                    pdf_companions_md = (
+                        f"---\n"
+                        f"#### 📑 PDF Companions:\n"
+                        f"- 📥 **Quiz (PDF)**: [Download {pdf1_path.name}]({pdf1_url})\n"
+                        f"- 📥 **Answer Key (PDF)**: [Download {pdf2_path.name}]({pdf2_url})\n\n"
+                    )
+
+                output_md = (
+                    f"### 📄 Publication-Grade Microsoft Word Documents (.docx) Compiled\n\n"
+                    f"Two separate, unbranded Microsoft Word documents have been compiled as requested:\n\n"
+                    f"1. 📄 **Quiz Questions Document**: `{docx1_path.name}` ({docx1_kb} KB)\n"
+                    f"   📥 **Download Quiz (.docx)**: [Download {docx1_path.name}]({docx1_url})\n"
+                    f"   *(Contains all instructions, questions, and options — zero answers included)*\n\n"
+                    f"2. 🔑 **Separate Answer Key Document**: `{docx2_path.name}` ({docx2_kb} KB)\n"
+                    f"   📥 **Download Answer Key (.docx)**: [Download {docx2_path.name}]({docx2_url})\n"
+                    f"   *(Contains full answer key, correct option letters, code snippets, and explanations)*\n\n"
+                    f"{pdf_companions_md}"
+                )
+
+                return WorkerResult(
+                    step_id=task.step_id,
+                    worker_model="Word & Document Publishing Specialist",
+                    domain=DomainType.AUDIT,
+                    output_text=output_md,
+                    artifacts={
+                        "docx_url": docx1_url,
+                        "download_url": docx1_url,
+                        "local_path": str(docx1_path),
+                        "filename": docx1_path.name,
+                        "docx_filename": docx1_path.name,
+                        "has_docx": True,
+                        "file_size_bytes": docx1_path.stat().st_size,
+                        "docx_answer_key_url": docx2_url,
+                        "docx_answer_key_filename": docx2_path.name,
+                        "has_separate_answer_key": True,
+                        "pdf_url": pdf1_url,
+                        "pdf_filename": pdf1_path.name if pdf1_path else None,
+                        "pdf_answer_key_url": pdf2_url,
+                        "pdf_answer_key_filename": pdf2_path.name if pdf2_path else None,
+                        "has_pdf": bool(pdf1_url),
+                    },
+                    success=True
+                )
+
+            # Separate files requested as PDF
+            pdf1_url, pdf1_path = markdown_to_pdf(doc1_content, title=title_q, output_filename=f"{fn_q}_{uid}.pdf")
+            pdf2_url, pdf2_path = markdown_to_pdf(doc2_content, title=title_ak, output_filename=f"{fn_ak}_{uid}.pdf")
+            pdf1_kb = round(pdf1_path.stat().st_size / 1024, 1)
+            pdf2_kb = round(pdf2_path.stat().st_size / 1024, 1)
+
+            output_md = (
+                f"### 📄 Publication-Grade PDF Documents Compiled\n\n"
+                f"Two separate, publication-grade PDF documents have been compiled as requested:\n\n"
+                f"1. 📄 **Quiz Questions Document**: `{pdf1_path.name}` ({pdf1_kb} KB)\n"
+                f"   📥 **Download Quiz (.pdf)**: [Download {pdf1_path.name}]({pdf1_url})\n"
+                f"   *(Questions only — zero answers)*\n\n"
+                f"2. 🔑 **Separate Answer Key Document**: `{pdf2_path.name}` ({pdf2_kb} KB)\n"
+                f"   📥 **Download Answer Key (.pdf)**: [Download {pdf2_path.name}]({pdf2_url})\n"
+                f"   *(Complete solutions and explanations)*\n\n"
+            )
+
+            return WorkerResult(
+                step_id=task.step_id,
+                worker_model="PDF & Document Publishing Specialist",
+                domain=DomainType.AUDIT,
+                output_text=output_md,
+                artifacts={
+                    "pdf_url": pdf1_url,
+                    "local_path": str(pdf1_path),
+                    "filename": pdf1_path.name,
+                    "pdf_filename": pdf1_path.name,
+                    "pdf_answer_key_url": pdf2_url,
+                    "pdf_answer_key_filename": pdf2_path.name,
+                    "has_pdf": True,
+                    "has_separate_answer_key": True,
+                    "file_size_bytes": pdf1_path.stat().st_size
+                },
+                success=True
+            )
+
+        # ----------------------------------------------------
+        # CASE B: SINGLE-FILE DELIVERABLE
+        # ----------------------------------------------------
         doc_title = task.title if task.title and not task.title.startswith("Sub-Task") else "Document Deliverable"
         for phrase in ["give me answers to these questions in a pdf", "give answers to these questions in a pdf"]:
             if phrase in objective.lower():
                 doc_title = "Assignment Solutions & Technical Answers"
                 break
 
-        is_word_requested = any(w in (task.title + " " + task.description + " " + objective).lower() for w in [
-            "word doc", "word document", "docx", ".docx", "microsoft word", "word format", "in word", "as word"
-        ])
-
         if is_word_requested:
-            from app.utils.docx_generator import markdown_to_docx
             docx_url, docx_path = markdown_to_docx(compiled_content, title=doc_title)
             docx_kb = round(docx_path.stat().st_size / 1024, 1)
 
@@ -818,7 +1087,7 @@ if __name__ == "__main__":
                 f"- **Document Title**: {doc_title}\n"
                 f"- **Word File (.docx)**: `{docx_path.name}` ({docx_kb} KB)\n"
                 f"{pdf_line}"
-                f"- **Formatting Engine**: python-docx OpenXML + ReportLab Canvas\n\n"
+                f"- **Formatting Engine**: python-docx OpenXML Canvas\n\n"
                 f"📥 **Download Microsoft Word Document**: [Download {docx_path.name}]({docx_url})\n\n"
                 f"{pdf_dl}"
             )
@@ -830,8 +1099,10 @@ if __name__ == "__main__":
                 output_text=output_md,
                 artifacts={
                     "docx_url": docx_url,
+                    "download_url": docx_url,
                     "local_path": str(docx_path),
                     "filename": docx_path.name,
+                    "docx_filename": docx_path.name,
                     "has_docx": True,
                     "file_size_bytes": docx_path.stat().st_size,
                     "pdf_url": pdf_url,
@@ -893,6 +1164,29 @@ if __name__ == "__main__":
                 "- The rest of your deliverable must contain strictly the riddle and calculation steps, keeping the user in full suspense!"
             )
 
+        wants_separate_file = any(w in (objective + " " + task.description + " " + task.title).lower() for w in [
+            "separate file", "seperate file", "separate document", "seperate document",
+            "separate doc", "seperate doc", "separate answer key", "seperate answer key",
+            "answer key in separate", "answer key in seperate", "answers in separate",
+            "answers in seperate", "answer key separate", "answer key seperate"
+        ])
+        separate_file_rule = ""
+        if wants_separate_file:
+            separate_file_rule = (
+                "\n\nCRITICAL SEPARATE DELIVERABLES PROTOCOL (SEPARATE QUIZ & ANSWER KEY):\n"
+                "- The user EXPLICITLY requested the quiz and answer key in SEPARATE files/documents.\n"
+                "- Under NO circumstances should you reveal answers, solutions, or answer hints directly under the questions!\n"
+                "- You MUST structure your entire deliverable into EXACTLY TWO independent documents separated by these EXACT delimiter lines:\n\n"
+                "=== DOCUMENT 1: QUIZ QUESTIONS ===\n"
+                "# IT429: Generative AI Quiz\n"
+                "(Include all instructions, multiple choice questions with options A, B, C, D, and fill-in-the-blank questions here. DO NOT include any answers, answer letters, or hints in Document 1!)\n\n"
+                "=== DOCUMENT 2: SEPARATE ANSWER KEY ===\n"
+                "# IT429: Generative AI Quiz — Answer Key & Solutions\n"
+                "(Include the full answer key, correct option letters, full code implementations, and detailed technical explanations for every question from Document 1 here!)\n\n"
+                "- Strictly obey this separation so that our document publishing engine can compile two separate Microsoft Word (.docx) files for the user!\n"
+                "- NEVER write 'Prepared by OmniTask AI' or artificial branding in either document."
+            )
+
         system_content = (
             "You are the OpenAI GPT Specialist for OmniTask AI.\n"
             "Fulfill the user's task with rigor and high fidelity.\n"
@@ -911,7 +1205,7 @@ if __name__ == "__main__":
             "  * ALWAYS present each recipe as an INDEPENDENT, STANDALONE VIDEO PROJECT.\n"
             "  * Provide full, exact ingredient measurements and step-by-step cooking techniques for each option individually.\n"
             "  * NEVER instruct or advise the creator to cram all 3 recipes into a single video unless the user specifically asked for a combo platter video.\n"
-            f"{secrecy_rule}"
+            f"{secrecy_rule}{separate_file_rule}"
         )
         user_msg = (
             f"=== ASSIGNED MILESTONE: {task.title} ===\n"
@@ -923,6 +1217,7 @@ if __name__ == "__main__":
             f"- DO NOT wander outside this milestone or execute future tasks belonging to other agents.\n"
             f"- If answering questions from the attached materials, provide complete, full-length answers to ALL questions.\n\n"
             f"{attached_files_text}\n"
+            f"{separate_file_rule}\n"
             f"{prior_context}"
         )
 

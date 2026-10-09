@@ -52,6 +52,12 @@ interface FileDownloadInfo {
   imageUrl?: string;
   isPdf?: boolean;
   pdfUrl?: string;
+  isDocx?: boolean;
+  docxUrl?: string;
+  docxAnswerKeyUrl?: string;
+  docxAnswerKeyFilename?: string;
+  pdfAnswerKeyUrl?: string;
+  pdfAnswerKeyFilename?: string;
   isVideo?: boolean;
   videoUrl?: string;
   isAudio?: boolean;
@@ -85,14 +91,35 @@ const parseDeliverableFile = (
       .replace(/^_+|_+$/g, '')
       .slice(0, 36) || 'deliverable';
 
-  // 1. Check for PDF document asset
+  // 1. Check for Word (.docx) document asset
+  if (artifacts?.docx_url || artifacts?.has_docx) {
+    const docxUrl = artifacts.docx_url || artifacts.download_url;
+    return {
+      filename: artifacts.docx_filename || artifacts.filename || `${safeName}.docx`,
+      content: '',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      isDocx: true,
+      docxUrl: docxUrl,
+      docxAnswerKeyUrl: artifacts.docx_answer_key_url,
+      docxAnswerKeyFilename: artifacts.docx_answer_key_filename,
+      isPdf: Boolean(artifacts.pdf_url),
+      pdfUrl: artifacts.pdf_url,
+      pdfAnswerKeyUrl: artifacts.pdf_answer_key_url,
+      pdfAnswerKeyFilename: artifacts.pdf_answer_key_filename,
+      extension: 'DOCX',
+    };
+  }
+
+  // 2. Check for PDF document asset
   if (artifacts?.pdf_url) {
     return {
-      filename: artifacts.filename || `${safeName}.pdf`,
+      filename: artifacts.filename || artifacts.pdf_filename || `${safeName}.pdf`,
       content: '',
       mimeType: 'application/pdf',
       isPdf: true,
       pdfUrl: artifacts.pdf_url,
+      pdfAnswerKeyUrl: artifacts.pdf_answer_key_url,
+      pdfAnswerKeyFilename: artifacts.pdf_answer_key_filename,
       extension: 'PDF',
     };
   }
@@ -239,8 +266,9 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
     }, 2000);
   };
 
-  const handleDownload = async (fileInfo: FileDownloadInfo) => {
-    const binaryUrl = fileInfo.pdfUrl || fileInfo.videoUrl || fileInfo.audioUrl || fileInfo.imageUrl;
+  const handleDownload = async (fileInfo: FileDownloadInfo, specificUrl?: string, specificFilename?: string) => {
+    const binaryUrl = specificUrl || fileInfo.docxUrl || fileInfo.pdfUrl || fileInfo.videoUrl || fileInfo.audioUrl || fileInfo.imageUrl;
+    const downloadFilename = specificFilename || (specificUrl ? specificUrl.split('/').pop() : fileInfo.filename);
     if (binaryUrl) {
       try {
         const response = await fetch(binaryUrl);
@@ -248,7 +276,7 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = fileInfo.filename;
+        a.download = downloadFilename || 'deliverable';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -256,7 +284,7 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
       } catch {
         const a = document.createElement('a');
         a.href = binaryUrl;
-        a.download = fileInfo.filename;
+        a.download = downloadFilename || 'deliverable';
         a.target = '_blank';
         document.body.appendChild(a);
         a.click();
@@ -571,47 +599,175 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                                   </>
                                 )}
                               </button>
-                              <button
-                                onClick={() => handleDownload(fileInfo)}
-                                className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-neutral-200 hover:text-white transition text-[11px] font-mono border border-white/[0.1]"
-                                title={`Download as .${fileInfo.extension.toLowerCase()}`}
-                              >
-                                <Download className="w-3 h-3 text-neutral-300" />
-                                <span>Download (.{fileInfo.extension.toLowerCase()})</span>
-                              </button>
-                            </div>
-                          </div>
-                          {/* PDF Document Deliverable Card */}
-                          {(output.artifacts?.pdf_url || fileInfo.isPdf) && (
-                            <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.04] p-3.5 flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                                  <FileText className="w-5 h-5" />
-                                </div>
-                                <div>
-                                  <h4 className="text-xs font-semibold text-white font-mono">{fileInfo.filename}</h4>
-                                  <p className="text-[10px] text-blue-300/80 font-mono">Verified Publication-Quality PDF Document • ReportLab Engine</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <a
-                                  href={output.artifacts?.pdf_url || fileInfo.pdfUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono"
-                                >
-                                  <span>View PDF</span>
-                                  <ExternalLink className="w-3 h-3" />
-                                </a>
+                              {fileInfo.isDocx ? (
+                                <>
+                                  <button
+                                    onClick={() => handleDownload(fileInfo, output.artifacts?.docx_url || fileInfo.docxUrl, fileInfo.filename)}
+                                    className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 hover:text-white transition text-[11px] font-mono border border-blue-500/40"
+                                    title="Download Microsoft Word (.docx)"
+                                  >
+                                    <Download className="w-3 h-3 text-blue-300" />
+                                    <span>Download (.docx)</span>
+                                  </button>
+                                  {(output.artifacts?.docx_answer_key_url || fileInfo.docxAnswerKeyUrl) && (
+                                    <button
+                                      onClick={() => handleDownload(fileInfo, output.artifacts?.docx_answer_key_url || fileInfo.docxAnswerKeyUrl, output.artifacts?.docx_answer_key_filename || fileInfo.docxAnswerKeyFilename || 'Answer_Key.docx')}
+                                      className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 hover:text-white transition text-[11px] font-mono border border-emerald-500/40"
+                                      title="Download Answer Key (.docx)"
+                                    >
+                                      <Download className="w-3 h-3 text-emerald-300" />
+                                      <span>Answer Key (.docx)</span>
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
                                 <button
                                   onClick={() => handleDownload(fileInfo)}
-                                  className="flex items-center gap-1.5 px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white transition text-[11px] font-mono font-medium shadow-md"
-                                  title="Download PDF (.pdf)"
+                                  className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-neutral-200 hover:text-white transition text-[11px] font-mono border border-white/[0.1]"
+                                  title={`Download as .${fileInfo.extension.toLowerCase()}`}
                                 >
-                                  <Download className="w-3 h-3" />
-                                  <span>Download PDF (.pdf)</span>
+                                  <Download className="w-3 h-3 text-neutral-300" />
+                                  <span>Download (.{fileInfo.extension.toLowerCase()})</span>
                                 </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Word (.docx) Document Deliverable Card */}
+                          {(output.artifacts?.docx_url || fileInfo.isDocx) && (
+                            <div className="rounded-xl border border-blue-500/40 bg-gradient-to-r from-blue-950/40 to-[#0b1329] p-4 space-y-3 shadow-lg">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400">
+                                    <FileText className="w-5 h-5 text-blue-400" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="text-xs font-semibold text-white font-mono">{fileInfo.filename}</h4>
+                                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
+                                        Word (.docx)
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-blue-200/80 font-mono mt-0.5">
+                                      Publication-Grade Microsoft Word Document &bull; Verified Content
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handleDownload(fileInfo, output.artifacts?.docx_url || fileInfo.docxUrl, fileInfo.filename)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition text-xs font-mono font-medium shadow-md hover:shadow-blue-500/25"
+                                    title="Download Word Document (.docx)"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                    <span>Download Word (.docx)</span>
+                                  </button>
+                                </div>
                               </div>
+
+                              {/* Separate Answer Key Download Row */}
+                              {(output.artifacts?.docx_answer_key_url || fileInfo.docxAnswerKeyUrl) && (
+                                <div className="pt-2.5 border-t border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-mono font-semibold text-emerald-400">🔑 Separate Answer Key:</span>
+                                    <span className="text-[11px] font-mono text-neutral-300">
+                                      {output.artifacts?.docx_answer_key_filename || fileInfo.docxAnswerKeyFilename || 'Answer_Key.docx'}
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleDownload(fileInfo, output.artifacts?.docx_answer_key_url || fileInfo.docxAnswerKeyUrl, output.artifacts?.docx_answer_key_filename || fileInfo.docxAnswerKeyFilename || 'Answer_Key.docx')}
+                                    className="flex items-center gap-1.5 px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition text-xs font-mono font-medium shadow"
+                                    title="Download Separate Answer Key (.docx)"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                    <span>Download Answer Key (.docx)</span>
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Optional PDF Companions */}
+                              {(output.artifacts?.pdf_url || fileInfo.pdfUrl) && (
+                                <div className="pt-2 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between text-[11px] font-mono text-neutral-400 gap-2">
+                                  <span>Companion PDF Document</span>
+                                  <div className="flex items-center gap-2">
+                                    <a
+                                      href={output.artifacts?.pdf_url || fileInfo.pdfUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
+                                    >
+                                      <span>View PDF</span>
+                                      <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                    <button
+                                      onClick={() => handleDownload(fileInfo, output.artifacts?.pdf_url || fileInfo.pdfUrl, output.artifacts?.pdf_filename || `${fileInfo.filename.replace(/\.docx$/, '')}.pdf`)}
+                                      className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
+                                    >
+                                      <Download className="w-3 h-3" />
+                                      <span>Download PDF</span>
+                                    </button>
+                                    {(output.artifacts?.pdf_answer_key_url || fileInfo.pdfAnswerKeyUrl) && (
+                                      <button
+                                        onClick={() => handleDownload(fileInfo, output.artifacts?.pdf_answer_key_url || fileInfo.pdfAnswerKeyUrl, output.artifacts?.pdf_answer_key_filename || 'Answer_Key.pdf')}
+                                        className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
+                                      >
+                                        <Download className="w-3 h-3" />
+                                        <span>Answer Key PDF</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* PDF Document Deliverable Card (When not a Word doc) */}
+                          {!fileInfo.isDocx && (output.artifacts?.pdf_url || fileInfo.isPdf) && (
+                            <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.04] p-3.5 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                                    <FileText className="w-5 h-5" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-xs font-semibold text-white font-mono">{fileInfo.filename}</h4>
+                                    <p className="text-[10px] text-blue-300/80 font-mono">Verified Publication-Quality PDF Document • ReportLab Engine</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={output.artifacts?.pdf_url || fileInfo.pdfUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono"
+                                  >
+                                    <span>View PDF</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                  <button
+                                    onClick={() => handleDownload(fileInfo, output.artifacts?.pdf_url || fileInfo.pdfUrl, fileInfo.filename)}
+                                    className="flex items-center gap-1.5 px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white transition text-[11px] font-mono font-medium shadow-md"
+                                    title="Download PDF (.pdf)"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    <span>Download PDF (.pdf)</span>
+                                  </button>
+                                </div>
+                              </div>
+                              {(output.artifacts?.pdf_answer_key_url || fileInfo.pdfAnswerKeyUrl) && (
+                                <div className="pt-2 border-t border-blue-500/20 flex items-center justify-between">
+                                  <span className="text-[11px] font-mono text-emerald-400 font-medium">
+                                    🔑 Separate Answer Key (PDF): {output.artifacts?.pdf_answer_key_filename || fileInfo.pdfAnswerKeyFilename || 'Answer_Key.pdf'}
+                                  </span>
+                                  <button
+                                    onClick={() => handleDownload(fileInfo, output.artifacts?.pdf_answer_key_url || fileInfo.pdfAnswerKeyUrl, output.artifacts?.pdf_answer_key_filename || fileInfo.pdfAnswerKeyFilename || 'Answer_Key.pdf')}
+                                    className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition text-[11px] font-mono font-medium"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    <span>Download Answer Key (PDF)</span>
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -972,48 +1128,175 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                             </>
                           )}
                         </button>
-                        <button
-                          onClick={() => handleDownload(fileInfo)}
-                          className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.14] text-neutral-200 hover:text-white transition text-[11px] font-mono border border-white/[0.1]"
-                          title={`Download ${fileInfo.filename}`}
-                        >
-                          <Download className="w-3 h-3 text-neutral-300" />
-                          <span>Download (.{fileInfo.extension.toLowerCase()})</span>
-                        </button>
+                        {fileInfo.isDocx ? (
+                          <>
+                            <button
+                              onClick={() => handleDownload(fileInfo, del.artifacts?.docx_url || fileInfo.docxUrl, fileInfo.filename)}
+                              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 hover:text-white transition text-[11px] font-mono border border-blue-500/40"
+                              title="Download Microsoft Word (.docx)"
+                            >
+                              <Download className="w-3 h-3 text-blue-300" />
+                              <span>Download (.docx)</span>
+                            </button>
+                            {(del.artifacts?.docx_answer_key_url || fileInfo.docxAnswerKeyUrl) && (
+                              <button
+                                onClick={() => handleDownload(fileInfo, del.artifacts?.docx_answer_key_url || fileInfo.docxAnswerKeyUrl, del.artifacts?.docx_answer_key_filename || fileInfo.docxAnswerKeyFilename || 'Answer_Key.docx')}
+                                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 hover:text-white transition text-[11px] font-mono border border-emerald-500/40"
+                                title="Download Answer Key (.docx)"
+                              >
+                                <Download className="w-3 h-3 text-emerald-300" />
+                                <span>Answer Key (.docx)</span>
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleDownload(fileInfo)}
+                            className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.14] text-neutral-200 hover:text-white transition text-[11px] font-mono border border-white/[0.1]"
+                            title={`Download ${fileInfo.filename}`}
+                          >
+                            <Download className="w-3 h-3 text-neutral-300" />
+                            <span>Download (.{fileInfo.extension.toLowerCase()})</span>
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    {/* PDF Document Deliverable Card */}
-                    {(del.artifacts?.pdf_url || fileInfo.isPdf) && (
-                      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.04] p-3.5 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                            <FileText className="w-5 h-5" />
+                    {/* Word (.docx) Document Deliverable Card */}
+                    {(del.artifacts?.docx_url || fileInfo.isDocx) && (
+                      <div className="rounded-xl border border-blue-500/40 bg-gradient-to-r from-blue-950/40 to-[#0b1329] p-4 space-y-3 shadow-lg">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400">
+                              <FileText className="w-5 h-5 text-blue-400" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-xs font-semibold text-white font-mono">{fileInfo.filename}</h4>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
+                                  Word (.docx)
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-blue-200/80 font-mono mt-0.5">
+                                Publication-Grade Microsoft Word Document &bull; Verified Content
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <h4 className="text-xs font-semibold text-white font-mono">{fileInfo.filename}</h4>
-                            <p className="text-[10px] text-blue-300/80 font-mono">Verified Publication-Quality PDF Document • ReportLab Engine</p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleDownload(fileInfo, del.artifacts?.docx_url || fileInfo.docxUrl, fileInfo.filename)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition text-xs font-mono font-medium shadow-md hover:shadow-blue-500/25"
+                              title="Download Word Document (.docx)"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download Word (.docx)</span>
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <a
-                            href={del.artifacts?.pdf_url || fileInfo.pdfUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono"
-                          >
-                            <span>View PDF</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                          <button
-                            onClick={() => handleDownload(fileInfo)}
-                            className="flex items-center gap-1.5 px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white transition text-[11px] font-mono font-medium shadow-md"
-                            title="Download PDF (.pdf)"
-                          >
-                            <Download className="w-3 h-3" />
-                            <span>Download PDF (.pdf)</span>
-                          </button>
+
+                        {/* Separate Answer Key Download Row */}
+                        {(del.artifacts?.docx_answer_key_url || fileInfo.docxAnswerKeyUrl) && (
+                          <div className="pt-2.5 border-t border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-mono font-semibold text-emerald-400">🔑 Separate Answer Key:</span>
+                              <span className="text-[11px] font-mono text-neutral-300">
+                                {del.artifacts?.docx_answer_key_filename || fileInfo.docxAnswerKeyFilename || 'Answer_Key.docx'}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleDownload(fileInfo, del.artifacts?.docx_answer_key_url || fileInfo.docxAnswerKeyUrl, del.artifacts?.docx_answer_key_filename || fileInfo.docxAnswerKeyFilename || 'Answer_Key.docx')}
+                              className="flex items-center gap-1.5 px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition text-xs font-mono font-medium shadow"
+                              title="Download Separate Answer Key (.docx)"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download Answer Key (.docx)</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Optional PDF Companions */}
+                        {(del.artifacts?.pdf_url || fileInfo.pdfUrl) && (
+                          <div className="pt-2 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between text-[11px] font-mono text-neutral-400 gap-2">
+                            <span>Companion PDF Document</span>
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={del.artifacts?.pdf_url || fileInfo.pdfUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
+                              >
+                                <span>View PDF</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                              <button
+                                onClick={() => handleDownload(fileInfo, del.artifacts?.pdf_url || fileInfo.pdfUrl, del.artifacts?.pdf_filename || `${fileInfo.filename.replace(/\.docx$/, '')}.pdf`)}
+                                className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
+                              >
+                                <Download className="w-3 h-3" />
+                                <span>Download PDF</span>
+                              </button>
+                              {(del.artifacts?.pdf_answer_key_url || fileInfo.pdfAnswerKeyUrl) && (
+                                <button
+                                  onClick={() => handleDownload(fileInfo, del.artifacts?.pdf_answer_key_url || fileInfo.pdfAnswerKeyUrl, del.artifacts?.pdf_answer_key_filename || 'Answer_Key.pdf')}
+                                  className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  <span>Answer Key PDF</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* PDF Document Deliverable Card (When not a Word doc) */}
+                    {!fileInfo.isDocx && (del.artifacts?.pdf_url || fileInfo.isPdf) && (
+                      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.04] p-3.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-semibold text-white font-mono">{fileInfo.filename}</h4>
+                              <p className="text-[10px] text-blue-300/80 font-mono">Verified Publication-Quality PDF Document • ReportLab Engine</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={del.artifacts?.pdf_url || fileInfo.pdfUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-neutral-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] transition text-[11px] font-mono"
+                            >
+                              <span>View PDF</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                            <button
+                              onClick={() => handleDownload(fileInfo, del.artifacts?.pdf_url || fileInfo.pdfUrl, fileInfo.filename)}
+                              className="flex items-center gap-1.5 px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white transition text-[11px] font-mono font-medium shadow-md"
+                              title="Download PDF (.pdf)"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>Download PDF (.pdf)</span>
+                            </button>
+                          </div>
                         </div>
+                        {(del.artifacts?.pdf_answer_key_url || fileInfo.pdfAnswerKeyUrl) && (
+                          <div className="pt-2 border-t border-blue-500/20 flex items-center justify-between">
+                            <span className="text-[11px] font-mono text-emerald-400 font-medium">
+                              🔑 Separate Answer Key (PDF): {del.artifacts?.pdf_answer_key_filename || fileInfo.pdfAnswerKeyFilename || 'Answer_Key.pdf'}
+                            </span>
+                            <button
+                              onClick={() => handleDownload(fileInfo, del.artifacts?.pdf_answer_key_url || fileInfo.pdfAnswerKeyUrl, del.artifacts?.pdf_answer_key_filename || fileInfo.pdfAnswerKeyFilename || 'Answer_Key.pdf')}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition text-[11px] font-mono font-medium"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>Download Answer Key (PDF)</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
